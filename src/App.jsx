@@ -5,23 +5,32 @@ import { getFirestore, collection, doc, addDoc, onSnapshot, setDoc, getDoc, quer
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { LogIn, LogOut, LayoutDashboard, Coins, Target, FileDown, PlusCircle, Trash2, Edit, Search, X as XIcon, Eye, EyeOff } from 'lucide-react';
 
-// --- PERBAIKAN BAGIAN 1: Pindahkan Inisialisasi ke dalam Komponen ---
-// Variabel Firebase dideklarasikan di luar, tapi tidak diinisialisasi
+// --- PERBAIKAN FINAL: Inisialisasi Super Aman ---
 let app;
 let auth;
 let db;
+let firebaseInitializationError = null;
 
+// Blok try-catch ini adalah kunci untuk mencegah layar putih.
 try {
+    // 1. Cek apakah variabel ada sebelum di-parse
+    if (!import.meta.env.VITE_FIREBASE_CONFIG) {
+        throw new Error("Variabel VITE_FIREBASE_CONFIG tidak ditemukan di Netlify.");
+    }
+    // 2. Parse JSON
     const firebaseConfig = JSON.parse(import.meta.env.VITE_FIREBASE_CONFIG);
+    
+    // 3. Inisialisasi Firebase
     app = initializeApp(firebaseConfig);
     auth = getAuth(app);
     db = getFirestore(app);
 } catch (error) {
-    console.error("Firebase initialization error:", error);
-    // Jika konfigurasi gagal, kita akan menampilkan pesan error di layar
+    console.error("KRITIS: Gagal total saat inisialisasi Firebase.", error);
+    // Simpan pesan error untuk ditampilkan ke pengguna.
+    firebaseInitializationError = error.message;
 }
 
-const appId = 'default-app-id'; // Kita tidak menggunakan __app_id di luar canvas
+const appId = 'default-app-id';
 
 // Fungsi untuk memuat script eksternal
 const loadScript = (src) => {
@@ -44,14 +53,11 @@ export default function App() {
     const [user, setUser] = useState(null);
     const [authReady, setAuthReady] = useState(false);
     const [scriptsLoaded, setScriptsLoaded] = useState(false);
-    const [firebaseError, setFirebaseError] = useState(false);
+    const [firebaseError, setFirebaseError] = useState(firebaseInitializationError); // Langsung set error jika ada
 
     useEffect(() => {
-        // --- PERBAIKAN BAGIAN 2: Proses Login yang Lebih Aman ---
-        if (!auth) {
-            // Jika inisialisasi gagal dari awal, set error state
-            setFirebaseError(true);
-            return;
+        if (firebaseError || !auth) {
+            return; // Hentikan proses jika sudah ada error dari awal
         }
 
         Promise.all([
@@ -62,27 +68,29 @@ export default function App() {
         
         const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
             if (firebaseUser) {
-                // Pengguna sudah login (baik anonim atau lainnya)
                 setAuthReady(true);
             } else {
-                // Tidak ada pengguna, coba login anonim
                 signInAnonymously(auth).catch(error => {
                     console.error("Gagal login anonim:", error);
-                    setFirebaseError(true); // Tampilkan error jika login gagal
+                    setFirebaseError(error.message); 
                 });
             }
         });
 
         return () => unsubscribe();
-    }, []);
+    }, [firebaseError]); // Tambahkan firebaseError sebagai dependency
 
-    // --- PERBAIKAN BAGIAN 3: Tampilkan Pesan Error yang Jelas ---
     if (firebaseError) {
         return (
             <div className="flex flex-col items-center justify-center h-screen bg-red-100 text-red-800 p-4">
                 <h1 className="text-2xl font-bold mb-4">Koneksi Gagal</h1>
-                <p className="text-center">Tidak dapat terhubung ke server Firebase. <br /> Pastikan konfigurasi (environment variables) di Netlify sudah benar dan domain sudah diizinkan di Firebase.</p>
-                <p className="text-center mt-2 text-sm">Cek 'Console' (F12) untuk detail teknis.</p>
+                <p className="text-center">Tidak dapat terhubung ke server Firebase.</p>
+                <div className="mt-2 p-3 bg-red-200 rounded-md text-sm text-left">
+                    <strong>Detail Error:</strong> {firebaseError}
+                </div>
+                <p className="text-center mt-4">
+                    <b>Solusi:</b> Periksa kembali <b className="text-black">Environment Variables</b> di Netlify. Pastikan nilainya adalah JSON yang valid (satu baris, tanpa enter) dan domain sudah diizinkan di Firebase.
+                </p>
             </div>
         );
     }
@@ -160,6 +168,7 @@ function MainApp({ user, onLogout, scriptsLoaded }) {
     const formattedDate = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}`;
 
     useEffect(() => {
+        if (!db) return; // Jangan lakukan apa-apa jika db tidak terinisialisasi
         setLoading(true);
         const transactionQuery = query(collection(db, `${profileDocPath}/transactions`));
         const budgetDocRef = doc(db, `${profileDocPath}/budgets/${formattedDate}`);
