@@ -1,3 +1,5 @@
+// File: netlify/functions/addToSheet.js
+
 const { google } = require('googleapis');
 
 exports.handler = async function (event) {
@@ -6,7 +8,8 @@ exports.handler = async function (event) {
   }
 
   try {
-    const { date, description, category, amount, user } = JSON.parse(event.body);
+    // Sekarang kita juga menerima transactionId
+    const { date, description, category, amount, user, transactionId } = JSON.parse(event.body);
 
     const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS);
     const spreadsheetId = process.env.GOOGLE_SHEET_ID;
@@ -20,16 +23,24 @@ exports.handler = async function (event) {
 
     await sheets.spreadsheets.values.append({
       spreadsheetId,
-      range: 'Sheet1!A:E', // Sesuaikan nama sheet jika berbeda
+      range: 'Sheet1!A:F', // Perbarui range hingga kolom F
       valueInputOption: 'USER_ENTERED',
       resource: {
-        values: [[date, description, category, amount, user]],
+        // Tambahkan transactionId di akhir
+        values: [[date, description, category, amount, user, transactionId]],
       },
     });
 
-    return { statusCode: 200, body: JSON.stringify({ message: 'Success' }) };
+    return {
+      statusCode: 200,
+      body: JSON.stringify({ message: 'Data berhasil ditambahkan!' }),
+    };
+
   } catch (error) {
     console.error('Error:', error);
-    return { statusCode: 500, body: JSON.stringify({ error: 'Failed' }) };
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: 'Gagal menambahkan data ke sheet.' }),
+    };
   }
 };

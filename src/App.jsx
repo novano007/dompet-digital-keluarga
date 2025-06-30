@@ -188,38 +188,56 @@ function MainApp({ user, onLogout, scriptsLoaded }) {
         };
     }, [user.name, profileDocPath, formattedDate]);
 
-    const handleTransactionAction = async (action, data) => {
-        const { id, ...payload } = data;
-        const transactionPath = `${profileDocPath}/transactions`;
-        try {
-            if (action === 'add') {
-                await addDoc(collection(db, transactionPath), payload);
-                
-                try {
-                    await fetch('/.netlify/functions/addToSheet', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            date: payload.date,
-                            description: payload.description,
-                            category: payload.category,
-                            amount: payload.amount,
-                            user: user.name
-                        }),
-                    });
-                } catch (sheetError) {
-                    console.error("Gagal mengirim ke Google Sheet:", sheetError);
-                }
+   // Di dalam komponen MainApp di file src/App.jsx
 
-            } else if (action === 'update') {
-                await updateDoc(doc(db, transactionPath, id), payload);
-            } else if (action === 'delete') {
-                await deleteDoc(doc(db, transactionPath, id));
-            }
-        } catch (error) {
-            console.error(`Gagal ${action} transaksi: `, error);
+const handleTransactionAction = async (action, data) => {
+    const { id, ...payload } = data;
+    const transactionPath = `${profileDocPath}/transactions`;
+
+    try {
+        if (action === 'add') {
+            // Saat menambah, kita dapatkan dulu ID dokumennya
+            const newDocRef = await addDoc(collection(db, transactionPath), payload);
+            const transactionId = newDocRef.id; // Ini ID uniknya
+
+            // Kirim data ke Google Sheet, sekarang DENGAN ID
+            await fetch('/.netlify/functions/addToSheet', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...payload, user: user.name, transactionId }),
+            });
+
+        } else if (action === 'update') {
+            // Update di Firebase
+            await updateDoc(doc(db, transactionPath, id), payload);
+
+            // Kirim perintah update ke Google Sheet
+            await fetch('/.netlify/functions/updateSheet', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    transactionId: id, // Kirim ID yang mau diupdate
+                    newData: { ...payload, user: user.name } // Kirim data barunya
+                }),
+            });
+
+        } else if (action === 'delete') {
+            // Hapus dari Firebase
+            await deleteDoc(doc(db, transactionPath, id));
+
+            // Kirim perintah hapus ke Google Sheet
+            await fetch('/.netlify/functions/deleteSheet', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ transactionId: id }), // Cukup kirim ID yang mau dihapus
+            });
         }
-    };
+    } catch (error) {
+        console.error(`Gagal ${action} transaksi: `, error);
+        // Anda bisa menambahkan notifikasi error untuk pengguna di sini
+    }
+};
+
 
     const handleUpdateBudgetPlan = async (newPlan) => {
         try {
