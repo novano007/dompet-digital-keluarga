@@ -5,14 +5,23 @@ import { getFirestore, collection, doc, addDoc, onSnapshot, setDoc, getDoc, quer
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { LogIn, LogOut, LayoutDashboard, Coins, Target, FileDown, PlusCircle, Trash2, Edit, Search, X as XIcon, Eye, EyeOff } from 'lucide-react';
 
-// Konfigurasi Firebase (akan diisi secara otomatis di lingkungan canvas)
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+// --- PERBAIKAN BAGIAN 1: Pindahkan Inisialisasi ke dalam Komponen ---
+// Variabel Firebase dideklarasikan di luar, tapi tidak diinisialisasi
+let app;
+let auth;
+let db;
 
-// Inisialisasi Firebase
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
+try {
+    const firebaseConfig = JSON.parse(import.meta.env.VITE_FIREBASE_CONFIG);
+    app = initializeApp(firebaseConfig);
+    auth = getAuth(app);
+    db = getFirestore(app);
+} catch (error) {
+    console.error("Firebase initialization error:", error);
+    // Jika konfigurasi gagal, kita akan menampilkan pesan error di layar
+}
+
+const appId = 'default-app-id'; // Kita tidak menggunakan __app_id di luar canvas
 
 // Fungsi untuk memuat script eksternal
 const loadScript = (src) => {
@@ -35,21 +44,48 @@ export default function App() {
     const [user, setUser] = useState(null);
     const [authReady, setAuthReady] = useState(false);
     const [scriptsLoaded, setScriptsLoaded] = useState(false);
+    const [firebaseError, setFirebaseError] = useState(false);
 
     useEffect(() => {
+        // --- PERBAIKAN BAGIAN 2: Proses Login yang Lebih Aman ---
+        if (!auth) {
+            // Jika inisialisasi gagal dari awal, set error state
+            setFirebaseError(true);
+            return;
+        }
+
         Promise.all([
             loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"),
             loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js"),
             loadScript("https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js")
         ]).then(() => setScriptsLoaded(true)).catch(error => console.error("Error loading scripts:", error));
-
-        signInAnonymously(auth).catch(error => console.error("Gagal login anonim:", error));
-
+        
         const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-            if (firebaseUser) setAuthReady(true);
+            if (firebaseUser) {
+                // Pengguna sudah login (baik anonim atau lainnya)
+                setAuthReady(true);
+            } else {
+                // Tidak ada pengguna, coba login anonim
+                signInAnonymously(auth).catch(error => {
+                    console.error("Gagal login anonim:", error);
+                    setFirebaseError(true); // Tampilkan error jika login gagal
+                });
+            }
         });
+
         return () => unsubscribe();
     }, []);
+
+    // --- PERBAIKAN BAGIAN 3: Tampilkan Pesan Error yang Jelas ---
+    if (firebaseError) {
+        return (
+            <div className="flex flex-col items-center justify-center h-screen bg-red-100 text-red-800 p-4">
+                <h1 className="text-2xl font-bold mb-4">Koneksi Gagal</h1>
+                <p className="text-center">Tidak dapat terhubung ke server Firebase. <br /> Pastikan konfigurasi (environment variables) di Netlify sudah benar dan domain sudah diizinkan di Firebase.</p>
+                <p className="text-center mt-2 text-sm">Cek 'Console' (F12) untuk detail teknis.</p>
+            </div>
+        );
+    }
 
     if (!authReady) {
         return <div className="flex items-center justify-center h-screen bg-gray-100"><div className="text-xl font-semibold">Menyiapkan Ruang Digital...</div></div>;
@@ -147,9 +183,30 @@ function MainApp({ user, onLogout, scriptsLoaded }) {
         const { id, ...payload } = data;
         const transactionPath = `${profileDocPath}/transactions`;
         try {
-            if (action === 'add') await addDoc(collection(db, transactionPath), payload);
-            else if (action === 'update') await updateDoc(doc(db, transactionPath, id), payload);
-            else if (action === 'delete') await deleteDoc(doc(db, transactionPath, id));
+            if (action === 'add') {
+                await addDoc(collection(db, transactionPath), payload);
+                
+                try {
+                    await fetch('/.netlify/functions/addToSheet', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            date: payload.date,
+                            description: payload.description,
+                            category: payload.category,
+                            amount: payload.amount,
+                            user: user.name
+                        }),
+                    });
+                } catch (sheetError) {
+                    console.error("Gagal mengirim ke Google Sheet:", sheetError);
+                }
+
+            } else if (action === 'update') {
+                await updateDoc(doc(db, transactionPath, id), payload);
+            } else if (action === 'delete') {
+                await deleteDoc(doc(db, transactionPath, id));
+            }
         } catch (error) {
             console.error(`Gagal ${action} transaksi: `, error);
         }
@@ -196,11 +253,9 @@ function MainApp({ user, onLogout, scriptsLoaded }) {
                 alert("Pustaka tabel PDF (autoTable) tidak termuat. Silakan muat ulang halaman.");
                 return;
             }
-            // Judul Laporan
             doc.setFontSize(18);
             doc.text(`Laporan Keuangan - ${formattedDate}`, 14, 20);
             
-            // Ringkasan
             doc.setFontSize(12);
             doc.text(`Total Pemasukan: ${formatCurrency(totalIncome)}`, 14, 30);
             doc.text(`Total Pengeluaran: ${formatCurrency(totalSpent)}`, 14, 37);
@@ -208,7 +263,6 @@ function MainApp({ user, onLogout, scriptsLoaded }) {
             doc.setFont(undefined, 'bold');
             doc.text(`Sisa Saldo: ${formatCurrency(sisaSaldo)}`, 14, 46);
             
-            // Tabel Transaksi
             doc.autoTable({
                 startY: 55,
                 head: [['Tanggal', 'Deskripsi', 'Kategori', 'Nominal']],
@@ -220,11 +274,11 @@ function MainApp({ user, onLogout, scriptsLoaded }) {
         } else if (type === 'excel') {
              const summaryData = [
                 ["Laporan Keuangan", formattedDate],
-                [], // Baris kosong
+                [],
                 ["Total Pemasukan", totalIncome],
                 ["Total Pengeluaran", totalSpent],
                 ["Sisa Saldo", sisaSaldo],
-                [], // Baris kosong
+                [],
              ];
 
             const transactionHeader = ["Tanggal", "Deskripsi", "Kategori", "Nominal"];
@@ -234,7 +288,6 @@ function MainApp({ user, onLogout, scriptsLoaded }) {
             
             const worksheet = window.XLSX.utils.aoa_to_sheet(finalData);
 
-            // Menyesuaikan lebar kolom
             worksheet['!cols'] = [ {wch:12}, {wch:30}, {wch:20}, {wch:15} ];
             
             const workbook = window.XLSX.utils.book_new();
