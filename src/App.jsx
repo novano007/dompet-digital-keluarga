@@ -343,7 +343,7 @@ function MainApp({ user, onLogout }) {
             <div className="flex flex-col sm:flex-row items-center justify-between mb-6 gap-4">
                 <nav className="flex space-x-1 sm:space-x-2 bg-gray-200 p-1 rounded-lg">
                     {tabs.map(tab => (
-                        <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex items-center px-3 py-2 text-sm md:text-base font-medium rounded-md transition-all duration-300 ease-in-out transform hover:-translate-y-1 hover:scale-105 ${activeTab === tab.id ? 'bg-white text-blue-600 shadow' : 'text-gray-600 hover:bg-gray-300'}`}>
+                        <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex items-center px-3 py-2 text-sm md:text-base font-medium rounded-md transition-all duration-300 ease-in-out hover:-translate-y-1 ${activeTab === tab.id ? 'bg-white text-blue-600 shadow' : 'text-gray-600 hover:bg-gray-300'}`}>
                             <tab.icon className="mr-2 h-4 w-4 md:h-5 md:w-5" /> {tab.label}
                         </button>
                     ))}
@@ -490,7 +490,7 @@ function Dasbor({ allTransactions, currentMonthTransactions, budgetPlan, summary
 
 function InfoCard({ title, value, color, icon: Icon }) {
     return (
-        <div className={`bg-gradient-to-br ${color} text-white p-4 rounded-xl shadow-lg`}>
+        <div className={`bg-gradient-to-br ${color} text-white p-4 rounded-xl shadow-lg transition-all duration-300 ease-in-out hover:shadow-2xl hover:-translate-y-1`}>
             <div className="flex justify-between items-center">
                 <h4 className="text-sm font-semibold tracking-wide">{title}</h4>
                 {Icon && <Icon className="h-5 w-5 opacity-70"/>}
