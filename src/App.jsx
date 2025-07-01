@@ -26,6 +26,22 @@ try {
 
 const appId = 'default-app-id';
 
+// --- FUNGSI YANG DIKEMBALIKAN: Untuk memuat script eksternal ---
+const loadScript = (src) => {
+    return new Promise((resolve, reject) => {
+        if (document.querySelector(`script[src="${src}"]`)) {
+            resolve();
+            return;
+        }
+        const script = document.createElement('script');
+        script.src = src;
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error(`Gagal memuat script ${src}`));
+        document.head.appendChild(script);
+    });
+};
+
+
 // --- Komponen Baru: Animasi saat scroll ---
 function AnimatedSection({ children }) {
     const ref = useRef(null);
@@ -207,9 +223,21 @@ function MainApp({ user, onLogout }) {
     const [loading, setLoading] = useState(true);
     const [selectedDate, setSelectedDate] = useState(new Date());
     const [previousMonthBalance, setPreviousMonthBalance] = useState(0);
+    // --- STATE YANG DIKEMBALIKAN: Untuk status pemuatan script ---
+    const [scriptsLoaded, setScriptsLoaded] = useState(false);
 
     const profileDocPath = `artifacts/${appId}/public/data/profiles/${user.name}`;
     const formattedDate = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}`;
+
+    // --- USEEFFECT YANG DIKEMBALIKAN: Untuk memuat script eksternal ---
+    useEffect(() => {
+        Promise.all([
+            loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"),
+            loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js"),
+            loadScript("https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js")
+        ]).then(() => setScriptsLoaded(true)).catch(error => console.error("Error loading scripts:", error));
+    }, []);
+
 
     useEffect(() => {
         if (!db) return;
@@ -302,8 +330,6 @@ function MainApp({ user, onLogout }) {
         }
     };
     
-    const exportData = (type) => { /* ... (fungsi exportData tidak berubah) ... */ };
-
     const monthlyTransactions = useMemo(() => {
         return allTransactions.filter(t => t.date && t.date.startsWith(formattedDate));
     }, [allTransactions, formattedDate]);
@@ -314,6 +340,73 @@ function MainApp({ user, onLogout }) {
         const sisaSaldo = (previousMonthBalance + totalIncome) - totalSpent;
         return { totalIncome, totalSpent, sisaSaldo };
     }, [budgetPlan.incomes, monthlyTransactions, previousMonthBalance]);
+
+    // --- FUNGSI YANG DIKEMBALIKAN: exportData ---
+    const exportData = (type) => {
+        if (!scriptsLoaded) {
+            alert("Pustaka ekspor sedang dimuat, silakan coba lagi sesaat lagi.");
+            return;
+        }
+        
+        const dataToExport = monthlyTransactions;
+        const { totalIncome, totalSpent, sisaSaldo } = monthlySummary;
+        
+        const formatCurrency = (value) => `Rp ${Number(value).toLocaleString('id-ID')}`;
+
+        if (type === 'pdf') {
+            if (!window.jspdf || !window.jspdf.jsPDF) {
+                alert("Pustaka PDF (jsPDF) tidak dapat dimuat.");
+                return;
+            }
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            if (typeof doc.autoTable !== 'function') {
+                alert("Pustaka tabel PDF (autoTable) tidak termuat. Silakan muat ulang halaman.");
+                return;
+            }
+            doc.setFontSize(18);
+            doc.text(`Laporan Keuangan - ${formattedDate}`, 14, 20);
+            
+            doc.setFontSize(12);
+            doc.text(`Total Pemasukan: ${formatCurrency(totalIncome)}`, 14, 30);
+            doc.text(`Total Pengeluaran: ${formatCurrency(totalSpent)}`, 14, 37);
+            doc.setFontSize(14);
+            doc.setFont(undefined, 'bold');
+            doc.text(`Sisa Saldo: ${formatCurrency(sisaSaldo)}`, 14, 46);
+            
+            doc.autoTable({
+                startY: 55,
+                head: [['Tanggal', 'Deskripsi', 'Kategori', 'Nominal']],
+                body: dataToExport.map(t => [t.date, t.description, t.category, formatCurrency(t.amount)]),
+                theme: 'striped',
+                headStyles: { fillColor: [41, 128, 185] },
+            });
+            doc.save(`laporan_${user.name}_${formattedDate}.pdf`);
+        } else if (type === 'excel') {
+             const summaryData = [
+                ["Laporan Keuangan", formattedDate],
+                [],
+                ["Total Pemasukan", totalIncome],
+                ["Total Pengeluaran", totalSpent],
+                ["Sisa Saldo", sisaSaldo],
+                [],
+             ];
+
+            const transactionHeader = ["Tanggal", "Deskripsi", "Kategori", "Nominal"];
+            const transactionBody = dataToExport.map(t => [t.date, t.description, t.category, t.amount]);
+
+            const finalData = [...summaryData, transactionHeader, ...transactionBody];
+            
+            const worksheet = window.XLSX.utils.aoa_to_sheet(finalData);
+
+            worksheet['!cols'] = [ {wch:12}, {wch:30}, {wch:20}, {wch:15} ];
+            
+            const workbook = window.XLSX.utils.book_new();
+            window.XLSX.utils.book_append_sheet(workbook, worksheet, `Laporan ${formattedDate}`);
+            window.XLSX.writeFile(workbook, `laporan_${user.name}_${formattedDate}.xlsx`);
+        }
+    };
+
 
     const tabs = [ { id: 'dasbor', label: 'Dasbor', icon: LayoutDashboard }, { id: 'pelacak', label: 'Pelacak Pengeluaran', icon: Coins }, { id: 'rencana', label: 'Rencana Anggaran', icon: Target }, ];
     const currentYear = new Date().getFullYear();
@@ -349,8 +442,8 @@ function MainApp({ user, onLogout }) {
                     ))}
                 </nav>
                  <div className="flex space-x-2">
-                    <button onClick={() => exportData('pdf')} className="flex items-center px-3 py-2 text-sm bg-green-600 text-white rounded-lg shadow hover:bg-green-700 disabled:bg-gray-400"><FileDown className="h-4 w-4 mr-1" /> PDF</button>
-                    <button onClick={() => exportData('excel')} className="flex items-center px-3 py-2 text-sm bg-blue-600 text-white rounded-lg shadow hover:bg-blue-700 disabled:bg-gray-400"><FileDown className="h-4 w-4 mr-1" /> Excel</button>
+                    <button onClick={() => exportData('pdf')} disabled={!scriptsLoaded} className="flex items-center px-3 py-2 text-sm bg-green-600 text-white rounded-lg shadow hover:bg-green-700 disabled:bg-gray-400"><FileDown className="h-4 w-4 mr-1" /> PDF</button>
+                    <button onClick={() => exportData('excel')} disabled={!scriptsLoaded} className="flex items-center px-3 py-2 text-sm bg-blue-600 text-white rounded-lg shadow hover:bg-blue-700 disabled:bg-gray-400"><FileDown className="h-4 w-4 mr-1" /> Excel</button>
                 </div>
             </div>
 
