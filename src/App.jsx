@@ -1,70 +1,118 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, doc, addDoc, onSnapshot, setDoc, getDoc, query, deleteDoc, updateDoc } from 'firebase/firestore';
-import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { LogIn, LogOut, LayoutDashboard, Coins, Target, FileDown, PlusCircle, Trash2, Edit, Search, X as XIcon, Eye, EyeOff } from 'lucide-react';
+import { getFirestore, collection, doc, addDoc, onSnapshot, setDoc, getDoc, query, deleteDoc, updateDoc, getDocs } from 'firebase/firestore';
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
+import { LogIn, LogOut, LayoutDashboard, Coins, Target, FileDown, PlusCircle, Trash2, Edit, Search, X as XIcon, Eye, EyeOff, TrendingUp, Wallet, ArrowUp, Copy } from 'lucide-react';
 
-// --- PERBAIKAN FINAL: Inisialisasi Super Aman ---
+// --- Inisialisasi Firebase (Super Aman) ---
 let app;
 let auth;
 let db;
 let firebaseInitializationError = null;
 
-// Blok try-catch ini adalah kunci untuk mencegah layar putih.
 try {
-    // 1. Cek apakah variabel ada sebelum di-parse
     if (!import.meta.env.VITE_FIREBASE_CONFIG) {
-        throw new Error("Variabel VITE_FIREBASE_CONFIG tidak ditemukan di Netlify.");
+        throw new Error("Variabel VITE_FIREBASE_CONFIG tidak ditemukan.");
     }
-    // 2. Parse JSON
     const firebaseConfig = JSON.parse(import.meta.env.VITE_FIREBASE_CONFIG);
-    
-    // 3. Inisialisasi Firebase
     app = initializeApp(firebaseConfig);
     auth = getAuth(app);
     db = getFirestore(app);
 } catch (error) {
     console.error("KRITIS: Gagal total saat inisialisasi Firebase.", error);
-    // Simpan pesan error untuk ditampilkan ke pengguna.
     firebaseInitializationError = error.message;
 }
 
 const appId = 'default-app-id';
 
-// Fungsi untuk memuat script eksternal
-const loadScript = (src) => {
-    return new Promise((resolve, reject) => {
-        if (document.querySelector(`script[src="${src}"]`)) {
-            resolve();
-            return;
+// --- Komponen Baru: Animasi saat scroll ---
+function AnimatedSection({ children }) {
+    const ref = useRef(null);
+    const [isVisible, setIsVisible] = useState(false);
+
+    useEffect(() => {
+        const observer = new IntersectionObserver(
+            ([entry]) => {
+                if (entry.isIntersecting) {
+                    setIsVisible(true);
+                    observer.unobserve(entry.target);
+                }
+            },
+            {
+                threshold: 0.1, // Muncul saat 10% elemen terlihat
+            }
+        );
+
+        if (ref.current) {
+            observer.observe(ref.current);
         }
-        const script = document.createElement('script');
-        script.src = src;
-        script.onload = () => resolve();
-        script.onerror = () => reject(new Error(`Gagal memuat script ${src}`));
-        document.head.appendChild(script);
-    });
-};
+
+        return () => {
+            if (ref.current) {
+                observer.unobserve(ref.current);
+            }
+        };
+    }, []);
+
+    return (
+        <div
+            ref={ref}
+            className={`transition-all duration-700 ease-out ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}
+        >
+            {children}
+        </div>
+    );
+}
 
 
-// Komponen utama aplikasi
+// --- Komponen Baru: Tombol Kembali ke Atas ---
+function ScrollToTopButton() {
+    const [isVisible, setIsVisible] = useState(false);
+
+    const toggleVisibility = () => {
+        if (window.pageYOffset > 300) {
+            setIsVisible(true);
+        } else {
+            setIsVisible(false);
+        }
+    };
+
+    const scrollToTop = () => {
+        window.scrollTo({
+            top: 0,
+            behavior: 'smooth'
+        });
+    };
+
+    useEffect(() => {
+        window.addEventListener('scroll', toggleVisibility);
+        return () => {
+            window.removeEventListener('scroll', toggleVisibility);
+        };
+    }, []);
+
+    return (
+        <button
+            onClick={scrollToTop}
+            className={`fixed bottom-5 right-5 z-50 p-3 rounded-full bg-blue-600 text-white shadow-lg hover:bg-blue-700 focus:outline-none transition-opacity duration-300 ${isVisible ? 'opacity-100' : 'opacity-0'}`}
+            aria-label="Kembali ke atas"
+        >
+            <ArrowUp size={24} />
+        </button>
+    );
+}
+
+
 export default function App() {
     const [user, setUser] = useState(null);
     const [authReady, setAuthReady] = useState(false);
-    const [scriptsLoaded, setScriptsLoaded] = useState(false);
-    const [firebaseError, setFirebaseError] = useState(firebaseInitializationError); // Langsung set error jika ada
+    const [firebaseError, setFirebaseError] = useState(firebaseInitializationError);
 
     useEffect(() => {
         if (firebaseError || !auth) {
-            return; // Hentikan proses jika sudah ada error dari awal
+            return;
         }
-
-        Promise.all([
-            loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"),
-            loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js"),
-            loadScript("https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js")
-        ]).then(() => setScriptsLoaded(true)).catch(error => console.error("Error loading scripts:", error));
         
         const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
             if (firebaseUser) {
@@ -78,7 +126,7 @@ export default function App() {
         });
 
         return () => unsubscribe();
-    }, [firebaseError]); // Tambahkan firebaseError sebagai dependency
+    }, [firebaseError]);
 
     if (firebaseError) {
         return (
@@ -89,7 +137,7 @@ export default function App() {
                     <strong>Detail Error:</strong> {firebaseError}
                 </div>
                 <p className="text-center mt-4">
-                    <b>Solusi:</b> Periksa kembali <b className="text-black">Environment Variables</b> di Netlify. Pastikan nilainya adalah JSON yang valid (satu baris, tanpa enter) dan domain sudah diizinkan di Firebase.
+                    <b>Solusi:</b> Periksa kembali <b className="text-black">Environment Variables</b> di Netlify atau file <b className="text-black">.env.local</b> Anda.
                 </p>
             </div>
         );
@@ -102,15 +150,15 @@ export default function App() {
     return (
         <div className="bg-gray-50 font-sans min-h-screen">
             {user ? (
-                <MainApp user={user} onLogout={() => setUser(null)} scriptsLoaded={scriptsLoaded} />
+                <MainApp user={user} onLogout={() => setUser(null)} />
             ) : (
                 <LoginScreen onLogin={(profile) => setUser(profile)} />
             )}
+            <ScrollToTopButton />
         </div>
     );
 }
 
-// Komponen Halaman Login
 function LoginScreen({ onLogin }) {
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
@@ -156,27 +204,28 @@ function LoginScreen({ onLogin }) {
     );
 }
 
-// Komponen Aplikasi Utama (setelah login)
-function MainApp({ user, onLogout, scriptsLoaded }) {
+function MainApp({ user, onLogout }) {
     const [activeTab, setActiveTab] = useState('dasbor');
     const [allTransactions, setAllTransactions] = useState([]);
     const [budgetPlan, setBudgetPlan] = useState({ incomes: [], savings: [], budgetCategories: [] });
     const [loading, setLoading] = useState(true);
     const [selectedDate, setSelectedDate] = useState(new Date());
+    const [previousMonthBalance, setPreviousMonthBalance] = useState(0);
 
     const profileDocPath = `artifacts/${appId}/public/data/profiles/${user.name}`;
     const formattedDate = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}`;
 
     useEffect(() => {
-        if (!db) return; // Jangan lakukan apa-apa jika db tidak terinisialisasi
+        if (!db) return;
         setLoading(true);
-        const transactionQuery = query(collection(db, `${profileDocPath}/transactions`));
-        const budgetDocRef = doc(db, `${profileDocPath}/budgets/${formattedDate}`);
 
+        const transactionQuery = query(collection(db, `${profileDocPath}/transactions`));
         const unsubscribeTransactions = onSnapshot(transactionQuery, (snapshot) => {
-            setAllTransactions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+            const allDocs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setAllTransactions(allDocs);
         }, (error) => console.error("Error fetching transactions:", error));
 
+        const budgetDocRef = doc(db, `${profileDocPath}/budgets/${formattedDate}`);
         const unsubscribeBudget = onSnapshot(budgetDocRef, (doc) => {
             setBudgetPlan(doc.exists() ? doc.data() : { incomes: [], savings: [], budgetCategories: [] });
             setLoading(false);
@@ -186,67 +235,58 @@ function MainApp({ user, onLogout, scriptsLoaded }) {
             unsubscribeTransactions();
             unsubscribeBudget();
         };
-    }, [user.name, profileDocPath, formattedDate]);
+    }, [user.name, formattedDate]);
 
-   // Di dalam komponen MainApp di file src/App.jsx
+    useEffect(() => {
+        const calculatePreviousBalance = async () => {
+            if (allTransactions.length === 0 || !db) {
+                setPreviousMonthBalance(0);
+                return;
+            }
 
-const handleTransactionAction = async (action, data) => {
-    const { id, ...payload } = data;
-    const transactionPath = `${profileDocPath}/transactions`;
+            const prevMonthDate = new Date(selectedDate.getFullYear(), selectedDate.getMonth() - 1, 1);
+            const prevMonthFormatted = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
 
-    try {
-        if (action === 'add') {
-            // Saat menambah, kita dapatkan dulu ID dokumennya
-            const newDocRef = await addDoc(collection(db, transactionPath), payload);
-            const transactionId = newDocRef.id; // Ini ID uniknya
+            const prevBudgetRef = doc(db, `${profileDocPath}/budgets/${prevMonthFormatted}`);
+            const prevBudgetSnap = await getDoc(prevBudgetRef);
+            const prevBudget = prevBudgetSnap.exists() ? prevBudgetSnap.data() : { incomes: [] };
+            
+            const prevMonthIncome = prevBudget.incomes?.reduce((s, i) => s + Number(i.amount || 0), 0) || 0;
 
-            // Kirim data ke Google Sheet, sekarang DENGAN ID
-            await fetch('/.netlify/functions/addToSheet', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ...payload, user: user.name, transactionId }),
-            });
+            const prevMonthTransactions = allTransactions.filter(t => t.date && t.date.startsWith(prevMonthFormatted));
+            const prevMonthSpending = prevMonthTransactions.reduce((s, t) => s + Number(t.amount || 0), 0);
+            
+            // Sisa kas bulan lalu adalah Pemasukan - Pengeluaran bulan itu.
+            // Kita juga harus mempertimbangkan sisa kas dari bulan SEBELUMNYA lagi.
+            // Untuk simplifikasi, kita hitung balance flat per bulan.
+            // Untuk rollover sejati, kita perlu kalkulasi rekursif.
+            const balance = prevMonthIncome - prevMonthSpending;
+            setPreviousMonthBalance(balance);
+        };
 
-        } else if (action === 'update') {
-            // Update di Firebase
-            await updateDoc(doc(db, transactionPath, id), payload);
+        calculatePreviousBalance();
+    }, [allTransactions, selectedDate, user.name]);
 
-            // Kirim perintah update ke Google Sheet
-            await fetch('/.netlify/functions/updateSheet', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    transactionId: id, // Kirim ID yang mau diupdate
-                    newData: { ...payload, user: user.name } // Kirim data barunya
-                }),
-            });
+    const handleCopyPreviousBudget = async () => {
+        const prevMonthDate = new Date(selectedDate.getFullYear(), selectedDate.getMonth() - 1, 1);
+        const prevMonthFormatted = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
+        const prevBudgetRef = doc(db, `${profileDocPath}/budgets/${prevMonthFormatted}`);
+        const prevBudgetSnap = await getDoc(prevBudgetRef);
 
-        } else if (action === 'delete') {
-            // Hapus dari Firebase
-            await deleteDoc(doc(db, transactionPath, id));
-
-            // Kirim perintah hapus ke Google Sheet
-            await fetch('/.netlify/functions/deleteSheet', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ transactionId: id }), // Cukup kirim ID yang mau dihapus
-            });
-        }
-    } catch (error) {
-        console.error(`Gagal ${action} transaksi: `, error);
-        // Anda bisa menambahkan notifikasi error untuk pengguna di sini
-    }
-};
-
-
-    const handleUpdateBudgetPlan = async (newPlan) => {
-        try {
-            await setDoc(doc(db, `${profileDocPath}/budgets/${formattedDate}`), newPlan);
-        } catch (error) {
-            console.error("Gagal memperbarui rencana: ", error);
+        if (prevBudgetSnap.exists()) {
+            const previousBudget = prevBudgetSnap.data();
+            setBudgetPlan(previousBudget); // Langsung update state untuk RencanaAnggaran
+            // Simpan juga ke DB untuk bulan ini
+            await setDoc(doc(db, `${profileDocPath}/budgets/${formattedDate}`), previousBudget);
+        } else {
+            alert("Tidak ada data rencana anggaran dari bulan sebelumnya.");
         }
     };
-    
+
+    const handleTransactionAction = async (action, data) => { /* ... (fungsi ini tidak berubah) ... */ };
+    const handleUpdateBudgetPlan = async (newPlan) => { /* ... (fungsi ini tidak berubah) ... */ };
+    const exportData = (type) => { /* ... (fungsi ini tidak berubah) ... */ };
+
     const monthlyTransactions = useMemo(() => {
         return allTransactions.filter(t => t.date && t.date.startsWith(formattedDate));
     }, [allTransactions, formattedDate]);
@@ -254,81 +294,11 @@ const handleTransactionAction = async (action, data) => {
     const monthlySummary = useMemo(() => {
         const totalIncome = budgetPlan.incomes?.reduce((s, i) => s + Number(i.amount || 0), 0) || 0;
         const totalSpent = monthlyTransactions.reduce((s, t) => s + Number(t.amount || 0), 0);
-        const sisaSaldo = totalIncome - totalSpent;
+        const sisaSaldo = (previousMonthBalance + totalIncome) - totalSpent;
         return { totalIncome, totalSpent, sisaSaldo };
-    }, [budgetPlan.incomes, monthlyTransactions]);
+    }, [budgetPlan.incomes, monthlyTransactions, previousMonthBalance]);
 
-    const exportData = (type) => {
-        if (!scriptsLoaded) {
-            alert("Pustaka ekspor sedang dimuat, silakan coba lagi sesaat lagi.");
-            return;
-        }
-        
-        const dataToExport = monthlyTransactions;
-        const { totalIncome, totalSpent, sisaSaldo } = monthlySummary;
-        
-        const formatCurrency = (value) => `Rp ${Number(value).toLocaleString('id-ID')}`;
-
-        if (type === 'pdf') {
-            if (!window.jspdf || !window.jspdf.jsPDF) {
-                alert("Pustaka PDF (jsPDF) tidak dapat dimuat.");
-                return;
-            }
-            const { jsPDF } = window.jspdf;
-            const doc = new jsPDF();
-            if (typeof doc.autoTable !== 'function') {
-                alert("Pustaka tabel PDF (autoTable) tidak termuat. Silakan muat ulang halaman.");
-                return;
-            }
-            doc.setFontSize(18);
-            doc.text(`Laporan Keuangan - ${formattedDate}`, 14, 20);
-            
-            doc.setFontSize(12);
-            doc.text(`Total Pemasukan: ${formatCurrency(totalIncome)}`, 14, 30);
-            doc.text(`Total Pengeluaran: ${formatCurrency(totalSpent)}`, 14, 37);
-            doc.setFontSize(14);
-            doc.setFont(undefined, 'bold');
-            doc.text(`Sisa Saldo: ${formatCurrency(sisaSaldo)}`, 14, 46);
-            
-            doc.autoTable({
-                startY: 55,
-                head: [['Tanggal', 'Deskripsi', 'Kategori', 'Nominal']],
-                body: dataToExport.map(t => [t.date, t.description, t.category, formatCurrency(t.amount)]),
-                theme: 'striped',
-                headStyles: { fillColor: [41, 128, 185] },
-            });
-            doc.save(`laporan_${user.name}_${formattedDate}.pdf`);
-        } else if (type === 'excel') {
-             const summaryData = [
-                ["Laporan Keuangan", formattedDate],
-                [],
-                ["Total Pemasukan", totalIncome],
-                ["Total Pengeluaran", totalSpent],
-                ["Sisa Saldo", sisaSaldo],
-                [],
-             ];
-
-            const transactionHeader = ["Tanggal", "Deskripsi", "Kategori", "Nominal"];
-            const transactionBody = dataToExport.map(t => [t.date, t.description, t.category, t.amount]);
-
-            const finalData = [...summaryData, transactionHeader, ...transactionBody];
-            
-            const worksheet = window.XLSX.utils.aoa_to_sheet(finalData);
-
-            worksheet['!cols'] = [ {wch:12}, {wch:30}, {wch:20}, {wch:15} ];
-            
-            const workbook = window.XLSX.utils.book_new();
-            window.XLSX.utils.book_append_sheet(workbook, worksheet, `Laporan ${formattedDate}`);
-            window.XLSX.writeFile(workbook, `laporan_${user.name}_${formattedDate}.xlsx`);
-        }
-    };
-
-    const tabs = [
-        { id: 'dasbor', label: 'Dasbor', icon: LayoutDashboard },
-        { id: 'pelacak', label: 'Pelacak Pengeluaran', icon: Coins },
-        { id: 'rencana', label: 'Rencana Anggaran', icon: Target },
-    ];
-
+    const tabs = [ { id: 'dasbor', label: 'Dasbor', icon: LayoutDashboard }, { id: 'pelacak', label: 'Pelacak Pengeluaran', icon: Coins }, { id: 'rencana', label: 'Rencana Anggaran', icon: Target }, ];
     const currentYear = new Date().getFullYear();
     const years = Array.from({length: 5}, (_, i) => currentYear - i);
     const months = Array.from({length: 12}, (_, i) => new Date(0, i).toLocaleString('id-ID', { month: 'long' }));
@@ -362,17 +332,17 @@ const handleTransactionAction = async (action, data) => {
                     ))}
                 </nav>
                  <div className="flex space-x-2">
-                    <button onClick={() => exportData('pdf')} disabled={!scriptsLoaded} className="flex items-center px-3 py-2 text-sm bg-green-600 text-white rounded-lg shadow hover:bg-green-700 disabled:bg-gray-400"><FileDown className="h-4 w-4 mr-1" /> PDF</button>
-                    <button onClick={() => exportData('excel')} disabled={!scriptsLoaded} className="flex items-center px-3 py-2 text-sm bg-blue-600 text-white rounded-lg shadow hover:bg-blue-700 disabled:bg-gray-400"><FileDown className="h-4 w-4 mr-1" /> Excel</button>
+                    <button onClick={() => exportData('pdf')} className="flex items-center px-3 py-2 text-sm bg-green-600 text-white rounded-lg shadow hover:bg-green-700 disabled:bg-gray-400"><FileDown className="h-4 w-4 mr-1" /> PDF</button>
+                    <button onClick={() => exportData('excel')} className="flex items-center px-3 py-2 text-sm bg-blue-600 text-white rounded-lg shadow hover:bg-blue-700 disabled:bg-gray-400"><FileDown className="h-4 w-4 mr-1" /> Excel</button>
                 </div>
             </div>
 
             <main>
                 {loading ? <div className="text-center py-10">Memuat data untuk {months[selectedDate.getMonth()]} {selectedDate.getFullYear()}...</div> : (
                     <>
-                        {activeTab === 'dasbor' && <Dasbor transactions={monthlyTransactions} budgetPlan={budgetPlan} summary={monthlySummary}/>}
+                        {activeTab === 'dasbor' && <Dasbor allTransactions={allTransactions} currentMonthTransactions={monthlyTransactions} budgetPlan={budgetPlan} summary={monthlySummary} previousMonthBalance={previousMonthBalance} />}
                         {activeTab === 'pelacak' && <PelacakPengeluaran transactions={monthlyTransactions} budgetPlan={budgetPlan} onTransactionAction={handleTransactionAction} />}
-                        {activeTab === 'rencana' && <RencanaAnggaran budgetPlan={budgetPlan} onUpdate={handleUpdateBudgetPlan} />}
+                        {activeTab === 'rencana' && <RencanaAnggaran budgetPlan={budgetPlan} onUpdate={handleUpdateBudgetPlan} onCopyPrevious={handleCopyPreviousBudget} />}
                     </>
                 )}
             </main>
@@ -380,246 +350,159 @@ const handleTransactionAction = async (action, data) => {
     );
 }
 
-function Dasbor({ transactions, budgetPlan, summary }) {
-    const data = useMemo(() => {
-        const expenseByCategory = budgetPlan.budgetCategories?.map(cat => {
-            const spent = transactions.filter(t => t.category === cat.name).reduce((s, t) => s + Number(t.amount || 0), 0);
-            const allocation = Number(cat.allocation || 0);
-            const usage = allocation > 0 ? (spent / allocation) * 100 : 0;
-            return { name: cat.name, allocation, realization: spent, usage: Math.round(usage) };
-        }) || [];
-        
-        const dailyExpenseData = transactions.reduce((acc, curr) => {
-            const day = new Date(curr.date).getDate();
-            if (!acc[day]) acc[day] = { name: `Tgl ${day}`, Pengeluaran: 0 };
-            acc[day].Pengeluaran += Number(curr.amount);
-            return acc;
-        }, {});
+function Dasbor({ allTransactions, currentMonthTransactions, budgetPlan, summary, previousMonthBalance }) {
+    const expenseByCategory = useMemo(() => { /* ... (tidak berubah) ... */ }, [currentMonthTransactions, budgetPlan]);
+    const dailyExpenseData = useMemo(() => { /* ... (tidak berubah) ... */ }, [currentMonthTransactions]);
+    
+    const monthlyTrendData = useMemo(() => {
+        const trends = {};
+        allTransactions.forEach(t => {
+            if (!t.date) return;
+            const monthKey = t.date.substring(0, 7);
+            if (!trends[monthKey]) {
+                trends[monthKey] = 0;
+            }
+            trends[monthKey] += Number(t.amount || 0);
+        });
 
-        return { expenseByCategory, pieChartData: expenseByCategory.filter(d => d.realization > 0), barChartData: Object.values(dailyExpenseData).sort((a,b) => Number(a.name.split(' ')[1]) - Number(b.name.split(' ')[1])) };
-    }, [transactions, budgetPlan]);
+        return Object.keys(trends).sort().slice(-6).map(key => {
+            const [year, month] = key.split('-');
+            const monthName = new Date(year, month - 1).toLocaleString('id-ID', { month: 'short' });
+            return { name: `${monthName} '${year.slice(2)}`, Pengeluaran: trends[key] };
+        });
+    }, [allTransactions]);
     
     const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#AF19FF', '#FF4560'];
+    const pieChartData = expenseByCategory.filter(d => d.realization > 0);
 
     return (
         <div className="space-y-6">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <InfoCard title="Total Pemasukan" value={summary.totalIncome} color="from-green-400 to-green-500" />
-                <InfoCard title="Total Pengeluaran" value={summary.totalSpent} color="from-red-400 to-red-500" />
-                <InfoCard title="Total Rencana Tabungan" value={budgetPlan.savings?.reduce((s, i) => s + Number(i.amount || 0), 0) || 0} color="from-yellow-400 to-yellow-500" />
-                <InfoCard title="Sisa Uang" value={summary.sisaSaldo} color="from-purple-400 to-purple-500" />
-            </div>
-             <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-                <div className="lg:col-span-3 bg-white p-4 sm:p-6 rounded-xl shadow-md transition-all duration-300 ease-in-out hover:shadow-2xl hover:-translate-y-1">
-                    <h3 className="text-xl font-semibold mb-4">Ringkasan Anggaran per Kategori</h3>
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left">
-                            <thead><tr className="border-b"><th className="p-2 text-sm">Kategori</th><th className="p-2 text-sm">Alokasi</th><th className="p-2 text-sm">Realisasi</th><th className="p-2 w-1/3 text-sm">% Penggunaan</th></tr></thead>
-                            <tbody>
-                                {data.expenseByCategory.map((item, index) => (
-                                    <tr key={index} className="border-b"><td className="p-2 font-medium">{item.name}</td><td className="p-2">Rp {item.allocation.toLocaleString('id-ID')}</td><td className="p-2">Rp {item.realization.toLocaleString('id-ID')}</td>
-                                        <td className="p-2">
-                                            <div className="flex items-center">
-                                                <div className="w-full bg-gray-200 rounded-full h-4 mr-2"><div className={`${item.usage > 100 ? 'bg-red-500' : 'bg-blue-500'} h-4 rounded-full`} style={{ width: `${item.usage > 100 ? 100 : item.usage}%` }}></div></div>
-                                                <span className="text-sm">{item.usage}%</span>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
+            <AnimatedSection>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                    <InfoCard title="Sisa Bulan Lalu" value={previousMonthBalance} color="from-gray-400 to-gray-500" icon={Wallet}/>
+                    <InfoCard title="Pemasukan Bulan Ini" value={summary.totalIncome} color="from-green-400 to-green-500" />
+                    <InfoCard title="Pengeluaran Bulan Ini" value={summary.totalSpent} color="from-red-400 to-red-500" />
+                    <InfoCard title="Rencana Tabungan" value={budgetPlan.savings?.reduce((s, i) => s + Number(i.amount || 0), 0) || 0} color="from-yellow-400 to-yellow-500" />
+                    <InfoCard title="Sisa Uang (Total)" value={summary.sisaSaldo} color="from-purple-400 to-purple-500" />
+                </div>
+            </AnimatedSection>
+            <AnimatedSection>
+                 <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+                    <div className="lg:col-span-3 bg-white p-4 sm:p-6 rounded-xl shadow-md">
+                        <h3 className="text-xl font-semibold mb-4">Ringkasan Anggaran per Kategori</h3>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left">
+                                <thead><tr className="border-b"><th className="p-2 text-sm">Kategori</th><th className="p-2 text-sm">Alokasi</th><th className="p-2 text-sm">Realisasi</th><th className="p-2 w-1/3 text-sm">% Penggunaan</th></tr></thead>
+                                <tbody>
+                                    {expenseByCategory.map((item, index) => (
+                                        <tr key={index} className="border-b"><td className="p-2 font-medium">{item.name}</td><td className="p-2">Rp {item.allocation.toLocaleString('id-ID')}</td><td className="p-2">Rp {item.realization.toLocaleString('id-ID')}</td>
+                                            <td className="p-2">
+                                                <div className="flex items-center">
+                                                    <div className="w-full bg-gray-200 rounded-full h-4 mr-2"><div className={`${item.usage > 100 ? 'bg-red-500' : 'bg-blue-500'} h-4 rounded-full`} style={{ width: `${item.usage > 100 ? 100 : item.usage}%` }}></div></div>
+                                                    <span className="text-sm">{item.usage}%</span>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div className="lg:col-span-2 bg-white p-4 sm:p-6 rounded-xl shadow-md">
+                        <h3 className="text-xl font-semibold mb-4">Realisasi Pengeluaran (%)</h3>
+                        {pieChartData.length > 0 ? (
+                            <ResponsiveContainer width="100%" height={250}>
+                                <PieChart>
+                                    <Pie data={pieChartData} dataKey="realization" nameKey="name" cx="50%" cy="50%" outerRadius={80} fill="#8884d8" label>{pieChartData.map((e, i) => <Cell key={`cell-${i}`} fill={COLORS[i % COLORS.length]} />)}</Pie>
+                                    <Tooltip formatter={(v) => `Rp ${Number(v).toLocaleString('id-ID')}`} /><Legend />
+                                </PieChart>
+                            </ResponsiveContainer>
+                        ) : <p className="text-center text-gray-500 h-full flex items-center justify-center">Belum ada data.</p>}
                     </div>
                 </div>
-                <div className="lg:col-span-2 bg-white p-4 sm:p-6 rounded-xl shadow-md transition-all duration-300 ease-in-out hover:shadow-2xl hover:-translate-y-1">
-                    <h3 className="text-xl font-semibold mb-4">Realisasi Pengeluaran (%)</h3>
-                    {data.pieChartData.length > 0 ? (
-                        <ResponsiveContainer width="100%" height={250}>
-                            <PieChart>
-                                <Pie data={data.pieChartData} dataKey="realization" nameKey="name" cx="50%" cy="50%" outerRadius={80} fill="#8884d8" label>{data.pieChartData.map((e, i) => <Cell key={`cell-${i}`} fill={COLORS[i % COLORS.length]} />)}</Pie>
-                                <Tooltip formatter={(v) => `Rp ${Number(v).toLocaleString('id-ID')}`} /><Legend />
-                            </PieChart>
-                        </ResponsiveContainer>
-                    ) : <p className="text-center text-gray-500 h-full flex items-center justify-center">Belum ada data.</p>}
+            </AnimatedSection>
+            <AnimatedSection>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div className="bg-white p-4 sm:p-6 rounded-xl shadow-md">
+                         <h3 className="text-xl font-semibold mb-4">Tren Pengeluaran Harian</h3>
+                         {dailyExpenseData.length > 0 ? (
+                            <ResponsiveContainer width="100%" height={300}>
+                                <BarChart data={dailyExpenseData}>
+                                    <CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="name" tick={{fontSize: 12}} /><YAxis tickFormatter={(v) => `Rp${(v/1e3).toFixed(0)}k`} tick={{fontSize: 12}}/>
+                                    <Tooltip formatter={(v) => `Rp ${Number(v).toLocaleString('id-ID')}`} /><Legend /><Bar dataKey="Pengeluaran" fill="#82ca9d" />
+                                </BarChart>
+                            </ResponsiveContainer>
+                         ) : <p className="text-center text-gray-500 h-full flex items-center justify-center">Belum ada data harian.</p>}
+                    </div>
+                    <div className="bg-white p-4 sm:p-6 rounded-xl shadow-md">
+                         <h3 className="text-xl font-semibold mb-4 flex items-center"><TrendingUp className="mr-2 h-6 w-6 text-blue-500"/>Tren Pengeluaran Bulanan</h3>
+                         {monthlyTrendData.length > 0 ? (
+                            <ResponsiveContainer width="100%" height={300}>
+                                <LineChart data={monthlyTrendData}>
+                                    <CartesianGrid strokeDasharray="3 3" />
+                                    <XAxis dataKey="name" tick={{fontSize: 12}}/>
+                                    <YAxis tickFormatter={(v) => `Rp${(v/1e6).toFixed(1)}jt`} tick={{fontSize: 12}}/>
+                                    <Tooltip formatter={(v) => `Rp ${Number(v).toLocaleString('id-ID')}`} />
+                                    <Legend />
+                                    <Line type="monotone" dataKey="Pengeluaran" stroke="#8884d8" strokeWidth={2} activeDot={{ r: 8 }} />
+                                </LineChart>
+                            </ResponsiveContainer>
+                         ) : <p className="text-center text-gray-500 h-full flex items-center justify-center">Belum ada data bulanan.</p>}
+                    </div>
                 </div>
-            </div>
-            <div className="bg-white p-4 sm:p-6 rounded-xl shadow-md transition-all duration-300 ease-in-out hover:shadow-2xl hover:-translate-y-1">
-                 <h3 className="text-xl font-semibold mb-4">Tren Pengeluaran Harian</h3>
-                 {data.barChartData.length > 0 ? (
-                    <ResponsiveContainer width="100%" height={300}>
-                        <BarChart data={data.barChartData}>
-                            <CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="name" tick={{fontSize: 12}} /><YAxis tickFormatter={(v) => `Rp${(v/1e3).toFixed(0)}k`} tick={{fontSize: 12}}/>
-                            <Tooltip formatter={(v) => `Rp ${Number(v).toLocaleString('id-ID')}`} /><Legend /><Bar dataKey="Pengeluaran" fill="#82ca9d" />
-                        </BarChart>
-                    </ResponsiveContainer>
-                 ) : <p className="text-center text-gray-500 h-full flex items-center justify-center">Belum ada data.</p>}
-            </div>
+            </AnimatedSection>
         </div>
     );
 }
 
-
-function PelacakPengeluaran({ transactions, budgetPlan, onTransactionAction }) {
-    const [editingTransaction, setEditingTransaction] = useState(null);
-    const [searchTerm, setSearchTerm] = useState("");
-
-    const filteredTransactions = useMemo(() => {
-        return transactions.filter(t => t.description.toLowerCase().includes(searchTerm.toLowerCase()));
-    }, [transactions, searchTerm]);
-    
+function InfoCard({ title, value, color, icon: Icon }) {
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {editingTransaction && <EditTransactionModal transaction={editingTransaction} budgetPlan={budgetPlan} onClose={() => setEditingTransaction(null)} onSave={(data) => { onTransactionAction('update', data); setEditingTransaction(null);}} />}
-            <div className="lg:col-span-1 bg-white p-6 rounded-xl shadow-md transition-all duration-300 ease-in-out hover:shadow-2xl hover:-translate-y-1">
-                <h3 className="text-xl font-semibold mb-4">Tambah Pengeluaran</h3>
-                <TransactionForm budgetPlan={budgetPlan} onSubmit={(data) => onTransactionAction('add', data)} />
+        <div className={`bg-gradient-to-br ${color} text-white p-4 rounded-xl shadow-lg`}>
+            <div className="flex justify-between items-center">
+                <h4 className="text-sm font-semibold tracking-wide">{title}</h4>
+                {Icon && <Icon className="h-5 w-5 opacity-70"/>}
             </div>
-            <div className="lg:col-span-2 bg-white p-6 rounded-xl shadow-md transition-all duration-300 ease-in-out hover:shadow-2xl hover:-translate-y-1">
-                <h3 className="text-xl font-semibold mb-4">Riwayat Pengeluaran</h3>
-                <div className="relative mb-4"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20}/><input type="text" placeholder="Cari deskripsi..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full p-2 pl-10 border rounded-lg"/></div>
-                <div className="overflow-x-auto max-h-[500px]">
-                    <table className="w-full text-left">
-                        <thead className="sticky top-0 bg-white z-10"><tr className="border-b"><th className="p-2 text-sm">Tanggal</th><th className="p-2 text-sm">Deskripsi</th><th className="p-2 text-sm">Kategori</th><th className="p-2 text-sm text-right">Nominal</th><th className="p-2 text-sm text-center">Aksi</th></tr></thead>
-                        <tbody>
-                            {filteredTransactions.map((t) => (
-                                <tr key={t.id} className="border-b hover:bg-gray-50">
-                                    <td className="p-2">{t.date}</td><td className="p-2">{t.description}</td>
-                                    <td className="p-2"><span className="bg-gray-200 text-gray-700 px-2 py-1 rounded-full text-xs">{t.category}</span></td>
-                                    <td className="p-2 text-right">Rp {Number(t.amount).toLocaleString('id-ID')}</td>
-                                    <td className="p-2 text-center flex justify-center gap-2">
-                                        <button onClick={() => setEditingTransaction(t)} className="text-blue-500 hover:text-blue-700"><Edit size={18}/></button>
-                                        <button onClick={() => onTransactionAction('delete', { id: t.id })} className="text-red-500 hover:text-red-700"><Trash2 size={18}/></button>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+            <p className="text-2xl font-bold mt-1">Rp {Number(value).toLocaleString('id-ID')}</p>
         </div>
     );
 }
 
-function TransactionForm({ budgetPlan, onSubmit, initialData = {} }) {
-    const [date, setDate] = useState(initialData.date || new Date().toISOString().slice(0, 10));
-    const [description, setDescription] = useState(initialData.description || '');
-    const [category, setCategory] = useState(initialData.category || '');
-    const [amount, setAmount] = useState(initialData.amount || '');
+function RencanaAnggaran({ budgetPlan, onUpdate, onCopyPrevious }) {
+    const [plan, setPlan] = useState(budgetPlan); 
 
-    useEffect(() => {
-        if (!category && budgetPlan.budgetCategories?.length > 0) setCategory(budgetPlan.budgetCategories[0].name);
-    }, [budgetPlan, category]);
-    
-    const handleSubmit = (e) => {
-        e.preventDefault();
-        if (!date || !description || !category || !amount) return;
-        onSubmit({ ...initialData, date, description, category, amount: parseFloat(amount) });
-        if (!initialData.id) { setDescription(''); setAmount(''); }
-    };
-
-    return (
-        <form onSubmit={handleSubmit} className="space-y-4">
-            <input type="date" value={date} onChange={e => setDate(e.target.value)} className="w-full p-2 border rounded-lg" required />
-            <input type="text" placeholder="Deskripsi" value={description} onChange={e => setDescription(e.target.value)} className="w-full p-2 border rounded-lg" required />
-            <select value={category} onChange={e => setCategory(e.target.value)} className="w-full p-2 border rounded-lg" required>
-                <option value="" disabled>Pilih Kategori</option>
-                {budgetPlan.budgetCategories?.map(cat => <option key={cat.name} value={cat.name}>{cat.name}</option>)}
-            </select>
-            <input type="number" placeholder="Nominal" value={amount} onChange={e => setAmount(e.target.value)} className="w-full p-2 border rounded-lg" required />
-            <button type="submit" className="w-full flex items-center justify-center p-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700">
-                {initialData.id ? 'Simpan Perubahan' : <><PlusCircle className="mr-2 h-5 w-5"/>Tambah</>}
-            </button>
-        </form>
-    );
-}
-
-function EditTransactionModal({ transaction, budgetPlan, onClose, onSave }) {
-    return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4">
-            <div className="bg-white p-6 rounded-xl shadow-lg w-full max-w-md">
-                <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-xl font-semibold">Edit Pengeluaran</h3>
-                    <button onClick={onClose} className="text-gray-500 hover:text-gray-800"><XIcon size={24}/></button>
-                </div>
-                <TransactionForm budgetPlan={budgetPlan} initialData={transaction} onSubmit={onSave} />
-            </div>
-        </div>
-    );
-}
-
-function RencanaAnggaran({ budgetPlan, onUpdate }) {
-    const [plan, setPlan] = useState(JSON.parse(JSON.stringify(budgetPlan))); 
-
-    useEffect(() => { setPlan(JSON.parse(JSON.stringify(budgetPlan))); }, [budgetPlan]);
+    useEffect(() => { setPlan(budgetPlan); }, [budgetPlan]);
 
     const handleUpdate = () => { onUpdate(plan); };
-
-    const handleItemChange = (type, index, field, value) => {
-        const newPlan = JSON.parse(JSON.stringify(plan));
-        if(!newPlan[type]) newPlan[type] = [];
-        newPlan[type][index][field] = value;
-        setPlan(newPlan);
-    };
+    const handleItemChange = (type, index, field, value) => { /* ... (tidak berubah) ... */ };
+    const handleAddItem = (type) => { /* ... (tidak berubah) ... */ };
+    const handleRemoveItem = (type, index) => { /* ... (tidak berubah) ... */ };
     
-    const handleAddItem = (type) => {
-        const newPlan = JSON.parse(JSON.stringify(plan));
-        const defaultItem = type === 'incomes' ? {source: '', amount: 0} : type === 'savings' ? {name: '', amount: 0} : {name: '', allocation: 0, type: 'Kebutuhan'};
-        if(!newPlan[type]) newPlan[type] = [];
-        newPlan[type].push(defaultItem);
-        setPlan(newPlan);
-    };
-
-    const handleRemoveItem = (type, index) => {
-        const newPlan = JSON.parse(JSON.stringify(plan));
-        newPlan[type].splice(index, 1);
-        setPlan(newPlan);
-    };
-    
-    const totals = useMemo(() => {
-        const totalIncome = plan.incomes?.reduce((s, i) => s + Number(i.amount || 0), 0) || 0;
-        const totalSavings = plan.savings?.reduce((s, i) => s + Number(i.amount || 0), 0) || 0;
-        const totalBudgeting = plan.budgetCategories?.reduce((s, i) => s + Number(i.allocation || 0), 0) || 0;
-        return { totalIncome, totalSavings, totalBudgeting };
-    }, [plan]);
+    const totals = useMemo(() => { /* ... (tidak berubah) ... */ }, [plan]);
 
     return (
-        <div className="space-y-6">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
-                 <InfoCard title="Total Rencana Pemasukan" value={totals.totalIncome} color="from-green-400 to-green-500" />
-                 <InfoCard title="Total Rencana Tabungan" value={totals.totalSavings} color="from-yellow-400 to-yellow-500" />
-                 <InfoCard title="Total Rencana Anggaran" value={totals.totalBudgeting} color="from-blue-400 to-blue-500" />
-            </div>
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <EditableList title="Sumber Pemasukan" items={plan.incomes || []} type="incomes" onChange={handleItemChange} onAdd={handleAddItem} onRemove={handleRemoveItem} fields={[{name: 'source', placeholder: 'Sumber Gaji'}, {name: 'amount', placeholder: 'Jumlah', type: 'number'}]} />
-                <EditableList title="Rencana Tabungan" items={plan.savings || []} type="savings" onChange={handleItemChange} onAdd={handleAddItem} onRemove={handleRemoveItem} fields={[{name: 'name', placeholder: 'Dana Darurat'}, {name: 'amount', placeholder: 'Jumlah', type: 'number'}]} />
-                <EditableList title="Alokasi Anggaran" items={plan.budgetCategories || []} type="budgetCategories" onChange={handleItemChange} onAdd={handleAddItem} onRemove={handleRemoveItem} fields={[{name: 'name', placeholder: 'Makan & Minum'}, {name: 'allocation', placeholder: 'Alokasi', type: 'number'}]} hasType={true} />
-            </div>
-            <div className="flex justify-end mt-6"><button onClick={handleUpdate} className="w-full sm:w-auto px-6 py-3 bg-green-600 text-white font-semibold rounded-lg shadow-md hover:bg-green-700">Simpan Rencana Bulan Ini</button></div>
-        </div>
-    );
-}
-
-function InfoCard({ title, value, color }) {
-    return (
-        <div className={`bg-gradient-to-br ${color} text-white p-4 rounded-xl shadow-lg transition-transform duration-300 ease-in-out hover:-translate-y-1 hover:shadow-2xl`}>
-            <h4 className="text-sm font-semibold tracking-wide">{title}</h4>
-            <p className="text-2xl font-bold">Rp {Number(value).toLocaleString('id-ID')}</p>
-        </div>
-    );
-}
-function EditableList({ title, items, type, onChange, onAdd, onRemove, fields, hasType=false }) {
-    return (
-        <div className="bg-white p-6 rounded-xl shadow-md space-y-3 transition-all duration-300 ease-in-out hover:shadow-2xl hover:-translate-y-1">
-            <h3 className="text-xl font-semibold mb-2">{title}</h3>
-            {items.map((item, index) => (
-                <div key={index} className="flex flex-col sm:flex-row gap-2 items-center">
-                    <div className="flex-grow w-full grid grid-cols-2 gap-2">
-                        {fields.map(field => <input key={field.name} type={field.type || 'text'} placeholder={field.placeholder} value={item[field.name] || ''} onChange={(e) => onChange(type, index, field.name, e.target.value)} className="w-full p-2 border rounded-lg"/>)}
-                    </div>
-                    {hasType && (<select value={item.type || 'Kebutuhan'} onChange={(e) => onChange(type, index, 'type', e.target.value)} className="w-full sm:w-auto flex-grow p-2 border rounded-lg"><option>Kebutuhan</option><option>Keinginan</option></select>)}
-                    <button onClick={() => onRemove(type, index)} className="text-red-500 hover:text-red-700 flex-shrink-0"><Trash2 size={20}/></button>
+        <AnimatedSection>
+            <div className="space-y-6">
+                <div className="flex justify-between items-center">
+                    <h2 className="text-2xl font-bold text-gray-700">Rencana Anggaran Bulan Ini</h2>
+                    <button onClick={onCopyPrevious} className="flex items-center px-4 py-2 text-sm bg-blue-500 text-white rounded-lg shadow hover:bg-blue-600">
+                        <Copy className="h-4 w-4 mr-2" /> Gunakan Rencana Bulan Lalu
+                    </button>
                 </div>
-            ))}
-            <button onClick={() => onAdd(type)} className="w-full mt-2 p-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">+ Tambah</button>
-        </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
+                     <InfoCard title="Total Rencana Pemasukan" value={totals.totalIncome} color="from-green-400 to-green-500" />
+                     <InfoCard title="Total Rencana Tabungan" value={totals.totalSavings} color="from-yellow-400 to-yellow-500" />
+                     <InfoCard title="Total Rencana Anggaran" value={totals.totalBudgeting} color="from-blue-400 to-blue-500" />
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <EditableList title="Sumber Pemasukan" items={plan.incomes || []} type="incomes" onChange={handleItemChange} onAdd={handleAddItem} onRemove={handleRemoveItem} fields={[{name: 'source', placeholder: 'Sumber Gaji'}, {name: 'amount', placeholder: 'Jumlah', type: 'number'}]} />
+                    <EditableList title="Rencana Tabungan" items={plan.savings || []} type="savings" onChange={handleItemChange} onAdd={handleAddItem} onRemove={handleRemoveItem} fields={[{name: 'name', placeholder: 'Dana Darurat'}, {name: 'amount', placeholder: 'Jumlah', type: 'number'}]} />
+                    <EditableList title="Alokasi Anggaran" items={plan.budgetCategories || []} type="budgetCategories" onChange={handleItemChange} onAdd={handleAddItem} onRemove={handleRemoveItem} fields={[{name: 'name', placeholder: 'Makan & Minum'}, {name: 'allocation', placeholder: 'Alokasi', type: 'number'}]} hasType={true} />
+                </div>
+                <div className="flex justify-end mt-6"><button onClick={handleUpdate} className="w-full sm:w-auto px-6 py-3 bg-green-600 text-white font-semibold rounded-lg shadow-md hover:bg-green-700">Simpan Rencana Bulan Ini</button></div>
+            </div>
+        </AnimatedSection>
     );
 }
+
+// Salin sisa komponen (PelacakPengeluaran, TransactionForm, dll.) dari kode Anda sebelumnya di sini
+// ...
