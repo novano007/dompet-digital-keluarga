@@ -223,19 +223,27 @@ function MainApp({ user, onLogout }) {
     const [loading, setLoading] = useState(true);
     const [selectedDate, setSelectedDate] = useState(new Date());
     const [previousMonthBalance, setPreviousMonthBalance] = useState(0);
-    // --- STATE YANG DIKEMBALIKAN: Untuk status pemuatan script ---
     const [scriptsLoaded, setScriptsLoaded] = useState(false);
 
     const profileDocPath = `artifacts/${appId}/public/data/profiles/${user.name}`;
     const formattedDate = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}`;
 
-    // --- USEEFFECT YANG DIKEMBALIKAN: Untuk memuat script eksternal ---
+    // --- PERBAIKAN: Memuat skrip secara berurutan ---
     useEffect(() => {
-        Promise.all([
-            loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"),
-            loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js"),
-            loadScript("https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js")
-        ]).then(() => setScriptsLoaded(true)).catch(error => console.error("Error loading scripts:", error));
+        loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js")
+            .then(() => {
+                // Setelah jsPDF selesai, baru muat autoTable
+                return loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js");
+            })
+            .then(() => {
+                // Setelah semua skrip PDF selesai, muat skrip Excel
+                return loadScript("https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js");
+            })
+            .then(() => {
+                // Semua skrip berhasil dimuat
+                setScriptsLoaded(true);
+            })
+            .catch(error => console.error("Gagal memuat skrip eksternal:", error));
     }, []);
 
 
@@ -341,7 +349,6 @@ function MainApp({ user, onLogout }) {
         return { totalIncome, totalSpent, sisaSaldo };
     }, [budgetPlan.incomes, monthlyTransactions, previousMonthBalance]);
 
-    // --- FUNGSI YANG DIKEMBALIKAN: exportData ---
     const exportData = (type) => {
         if (!scriptsLoaded) {
             alert("Pustaka ekspor sedang dimuat, silakan coba lagi sesaat lagi.");
