@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, doc, addDoc, onSnapshot, setDoc, getDoc, query, deleteDoc, updateDoc, getDocs } from 'firebase/firestore';
+import { getFirestore, collection, doc, addDoc, onSnapshot, setDoc, getDoc, query, deleteDoc, updateDoc } from 'firebase/firestore';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
 import { LogIn, LogOut, LayoutDashboard, Coins, Target, FileDown, PlusCircle, Trash2, Edit, Search, X as XIcon, Eye, EyeOff, TrendingUp, Wallet, ArrowUp, Copy } from 'lucide-react';
 
@@ -40,7 +40,7 @@ function AnimatedSection({ children }) {
                 }
             },
             {
-                threshold: 0.1, // Muncul saat 10% elemen terlihat
+                threshold: 0.1,
             }
         );
 
@@ -64,7 +64,6 @@ function AnimatedSection({ children }) {
         </div>
     );
 }
-
 
 // --- Komponen Baru: Tombol Kembali ke Atas ---
 function ScrollToTopButton() {
@@ -103,16 +102,13 @@ function ScrollToTopButton() {
     );
 }
 
-
 export default function App() {
     const [user, setUser] = useState(null);
     const [authReady, setAuthReady] = useState(false);
     const [firebaseError, setFirebaseError] = useState(firebaseInitializationError);
 
     useEffect(() => {
-        if (firebaseError || !auth) {
-            return;
-        }
+        if (firebaseError || !auth) return;
         
         const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
             if (firebaseUser) {
@@ -256,10 +252,6 @@ function MainApp({ user, onLogout }) {
             const prevMonthTransactions = allTransactions.filter(t => t.date && t.date.startsWith(prevMonthFormatted));
             const prevMonthSpending = prevMonthTransactions.reduce((s, t) => s + Number(t.amount || 0), 0);
             
-            // Sisa kas bulan lalu adalah Pemasukan - Pengeluaran bulan itu.
-            // Kita juga harus mempertimbangkan sisa kas dari bulan SEBELUMNYA lagi.
-            // Untuk simplifikasi, kita hitung balance flat per bulan.
-            // Untuk rollover sejati, kita perlu kalkulasi rekursif.
             const balance = prevMonthIncome - prevMonthSpending;
             setPreviousMonthBalance(balance);
         };
@@ -275,17 +267,42 @@ function MainApp({ user, onLogout }) {
 
         if (prevBudgetSnap.exists()) {
             const previousBudget = prevBudgetSnap.data();
-            setBudgetPlan(previousBudget); // Langsung update state untuk RencanaAnggaran
-            // Simpan juga ke DB untuk bulan ini
+            setBudgetPlan(previousBudget);
             await setDoc(doc(db, `${profileDocPath}/budgets/${formattedDate}`), previousBudget);
         } else {
             alert("Tidak ada data rencana anggaran dari bulan sebelumnya.");
         }
     };
 
-    const handleTransactionAction = async (action, data) => { /* ... (fungsi ini tidak berubah) ... */ };
-    const handleUpdateBudgetPlan = async (newPlan) => { /* ... (fungsi ini tidak berubah) ... */ };
-    const exportData = (type) => { /* ... (fungsi ini tidak berubah) ... */ };
+    const handleTransactionAction = async (action, data) => {
+        const { id, ...payload } = data;
+        const transactionPath = `${profileDocPath}/transactions`;
+        try {
+            if (action === 'add') {
+                const newDocRef = await addDoc(collection(db, transactionPath), payload);
+                const transactionId = newDocRef.id; 
+                await fetch('/.netlify/functions/addToSheet', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...payload, user: user.name, transactionId }), });
+            } else if (action === 'update') {
+                await updateDoc(doc(db, transactionPath, id), payload);
+                await fetch('/.netlify/functions/updateSheet', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ transactionId: id, newData: { ...payload, user: user.name } }), });
+            } else if (action === 'delete') {
+                await deleteDoc(doc(db, transactionPath, id));
+                await fetch('/.netlify/functions/deleteSheet', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ transactionId: id }), });
+            }
+        } catch (error) {
+            console.error(`Gagal ${action} transaksi: `, error);
+        }
+    };
+
+    const handleUpdateBudgetPlan = async (newPlan) => {
+        try {
+            await setDoc(doc(db, `${profileDocPath}/budgets/${formattedDate}`), newPlan);
+        } catch (error) {
+            console.error("Gagal memperbarui rencana: ", error);
+        }
+    };
+    
+    const exportData = (type) => { /* ... (fungsi exportData tidak berubah) ... */ };
 
     const monthlyTransactions = useMemo(() => {
         return allTransactions.filter(t => t.date && t.date.startsWith(formattedDate));
@@ -351,8 +368,24 @@ function MainApp({ user, onLogout }) {
 }
 
 function Dasbor({ allTransactions, currentMonthTransactions, budgetPlan, summary, previousMonthBalance }) {
-    const expenseByCategory = useMemo(() => { /* ... (tidak berubah) ... */ }, [currentMonthTransactions, budgetPlan]);
-    const dailyExpenseData = useMemo(() => { /* ... (tidak berubah) ... */ }, [currentMonthTransactions]);
+    const expenseByCategory = useMemo(() => {
+        return budgetPlan.budgetCategories?.map(cat => {
+            const spent = currentMonthTransactions.filter(t => t.category === cat.name).reduce((s, t) => s + Number(t.amount || 0), 0);
+            const allocation = Number(cat.allocation || 0);
+            const usage = allocation > 0 ? (spent / allocation) * 100 : 0;
+            return { name: cat.name, allocation, realization: spent, usage: Math.round(usage) };
+        }) || [];
+    }, [currentMonthTransactions, budgetPlan]);
+    
+    const dailyExpenseData = useMemo(() => {
+        const data = currentMonthTransactions.reduce((acc, curr) => {
+            const day = new Date(curr.date).getDate();
+            if (!acc[day]) acc[day] = { name: `Tgl ${day}`, Pengeluaran: 0 };
+            acc[day].Pengeluaran += Number(curr.amount);
+            return acc;
+        }, {});
+        return Object.values(data).sort((a,b) => Number(a.name.split(' ')[1]) - Number(b.name.split(' ')[1]));
+    }, [currentMonthTransactions]);
     
     const monthlyTrendData = useMemo(() => {
         const trends = {};
@@ -473,11 +506,34 @@ function RencanaAnggaran({ budgetPlan, onUpdate, onCopyPrevious }) {
     useEffect(() => { setPlan(budgetPlan); }, [budgetPlan]);
 
     const handleUpdate = () => { onUpdate(plan); };
-    const handleItemChange = (type, index, field, value) => { /* ... (tidak berubah) ... */ };
-    const handleAddItem = (type) => { /* ... (tidak berubah) ... */ };
-    const handleRemoveItem = (type, index) => { /* ... (tidak berubah) ... */ };
     
-    const totals = useMemo(() => { /* ... (tidak berubah) ... */ }, [plan]);
+    const handleItemChange = (type, index, field, value) => {
+        const newPlan = JSON.parse(JSON.stringify(plan));
+        if(!newPlan[type]) newPlan[type] = [];
+        newPlan[type][index][field] = value;
+        setPlan(newPlan);
+    };
+    
+    const handleAddItem = (type) => {
+        const newPlan = JSON.parse(JSON.stringify(plan));
+        const defaultItem = type === 'incomes' ? {source: '', amount: 0} : type === 'savings' ? {name: '', amount: 0} : {name: '', allocation: 0, type: 'Kebutuhan'};
+        if(!newPlan[type]) newPlan[type] = [];
+        newPlan[type].push(defaultItem);
+        setPlan(newPlan);
+    };
+
+    const handleRemoveItem = (type, index) => {
+        const newPlan = JSON.parse(JSON.stringify(plan));
+        newPlan[type].splice(index, 1);
+        setPlan(newPlan);
+    };
+    
+    const totals = useMemo(() => {
+        const totalIncome = plan.incomes?.reduce((s, i) => s + Number(i.amount || 0), 0) || 0;
+        const totalSavings = plan.savings?.reduce((s, i) => s + Number(i.amount || 0), 0) || 0;
+        const totalBudgeting = plan.budgetCategories?.reduce((s, i) => s + Number(i.allocation || 0), 0) || 0;
+        return { totalIncome, totalSavings, totalBudgeting };
+    }, [plan]);
 
     return (
         <AnimatedSection>
@@ -504,5 +560,110 @@ function RencanaAnggaran({ budgetPlan, onUpdate, onCopyPrevious }) {
     );
 }
 
-// Salin sisa komponen (PelacakPengeluaran, TransactionForm, dll.) dari kode Anda sebelumnya di sini
-// ...
+function PelacakPengeluaran({ transactions, budgetPlan, onTransactionAction }) {
+    const [editingTransaction, setEditingTransaction] = useState(null);
+    const [searchTerm, setSearchTerm] = useState("");
+
+    const filteredTransactions = useMemo(() => {
+        return transactions.filter(t => t.description.toLowerCase().includes(searchTerm.toLowerCase()));
+    }, [transactions, searchTerm]);
+    
+    return (
+        <AnimatedSection>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {editingTransaction && <EditTransactionModal transaction={editingTransaction} budgetPlan={budgetPlan} onClose={() => setEditingTransaction(null)} onSave={(data) => { onTransactionAction('update', data); setEditingTransaction(null);}} />}
+                <div className="lg:col-span-1 bg-white p-6 rounded-xl shadow-md">
+                    <h3 className="text-xl font-semibold mb-4">Tambah Pengeluaran</h3>
+                    <TransactionForm budgetPlan={budgetPlan} onSubmit={(data) => onTransactionAction('add', data)} />
+                </div>
+                <div className="lg:col-span-2 bg-white p-6 rounded-xl shadow-md">
+                    <h3 className="text-xl font-semibold mb-4">Riwayat Pengeluaran</h3>
+                    <div className="relative mb-4"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20}/><input type="text" placeholder="Cari deskripsi..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full p-2 pl-10 border rounded-lg"/></div>
+                    <div className="overflow-x-auto max-h-[500px]">
+                        <table className="w-full text-left">
+                            <thead className="sticky top-0 bg-white z-10"><tr className="border-b"><th className="p-2 text-sm">Tanggal</th><th className="p-2 text-sm">Deskripsi</th><th className="p-2 text-sm">Kategori</th><th className="p-2 text-sm text-right">Nominal</th><th className="p-2 text-sm text-center">Aksi</th></tr></thead>
+                            <tbody>
+                                {filteredTransactions.map((t) => (
+                                    <tr key={t.id} className="border-b hover:bg-gray-50">
+                                        <td className="p-2">{t.date}</td><td className="p-2">{t.description}</td>
+                                        <td className="p-2"><span className="bg-gray-200 text-gray-700 px-2 py-1 rounded-full text-xs">{t.category}</span></td>
+                                        <td className="p-2 text-right">Rp {Number(t.amount).toLocaleString('id-ID')}</td>
+                                        <td className="p-2 text-center flex justify-center gap-2">
+                                            <button onClick={() => setEditingTransaction(t)} className="text-blue-500 hover:text-blue-700"><Edit size={18}/></button>
+                                            <button onClick={() => onTransactionAction('delete', { id: t.id })} className="text-red-500 hover:text-red-700"><Trash2 size={18}/></button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </AnimatedSection>
+    );
+}
+
+function TransactionForm({ budgetPlan, onSubmit, initialData = {} }) {
+    const [date, setDate] = useState(initialData.date || new Date().toISOString().slice(0, 10));
+    const [description, setDescription] = useState(initialData.description || '');
+    const [category, setCategory] = useState(initialData.category || '');
+    const [amount, setAmount] = useState(initialData.amount || '');
+
+    useEffect(() => {
+        if (!category && budgetPlan.budgetCategories?.length > 0) setCategory(budgetPlan.budgetCategories[0].name);
+    }, [budgetPlan, category]);
+    
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        if (!date || !description || !category || !amount) return;
+        onSubmit({ ...initialData, date, description, category, amount: parseFloat(amount) });
+        if (!initialData.id) { setDescription(''); setAmount(''); }
+    };
+
+    return (
+        <form onSubmit={handleSubmit} className="space-y-4">
+            <input type="date" value={date} onChange={e => setDate(e.target.value)} className="w-full p-2 border rounded-lg" required />
+            <input type="text" placeholder="Deskripsi" value={description} onChange={e => setDescription(e.target.value)} className="w-full p-2 border rounded-lg" required />
+            <select value={category} onChange={e => setCategory(e.target.value)} className="w-full p-2 border rounded-lg" required>
+                <option value="" disabled>Pilih Kategori</option>
+                {budgetPlan.budgetCategories?.map(cat => <option key={cat.name} value={cat.name}>{cat.name}</option>)}
+            </select>
+            <input type="number" placeholder="Nominal" value={amount} onChange={e => setAmount(e.target.value)} className="w-full p-2 border rounded-lg" required />
+            <button type="submit" className="w-full flex items-center justify-center p-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700">
+                {initialData.id ? 'Simpan Perubahan' : <><PlusCircle className="mr-2 h-5 w-5"/>Tambah</>}
+            </button>
+        </form>
+    );
+}
+
+function EditTransactionModal({ transaction, budgetPlan, onClose, onSave }) {
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4">
+            <div className="bg-white p-6 rounded-xl shadow-lg w-full max-w-md">
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-xl font-semibold">Edit Pengeluaran</h3>
+                    <button onClick={onClose} className="text-gray-500 hover:text-gray-800"><XIcon size={24}/></button>
+                </div>
+                <TransactionForm budgetPlan={budgetPlan} initialData={transaction} onSubmit={onSave} />
+            </div>
+        </div>
+    );
+}
+
+function EditableList({ title, items, type, onChange, onAdd, onRemove, fields, hasType=false }) {
+    return (
+        <div className="bg-white p-6 rounded-xl shadow-md space-y-3">
+            <h3 className="text-xl font-semibold mb-2">{title}</h3>
+            {items.map((item, index) => (
+                <div key={index} className="flex flex-col sm:flex-row gap-2 items-center">
+                    <div className="flex-grow w-full grid grid-cols-2 gap-2">
+                        {fields.map(field => <input key={field.name} type={field.type || 'text'} placeholder={field.placeholder} value={item[field.name] || ''} onChange={(e) => onChange(type, index, field.name, e.target.value)} className="w-full p-2 border rounded-lg"/>)}
+                    </div>
+                    {hasType && (<select value={item.type || 'Kebutuhan'} onChange={(e) => onChange(type, index, 'type', e.target.value)} className="w-full sm:w-auto flex-grow p-2 border rounded-lg"><option>Kebutuhan</option><option>Keinginan</option></select>)}
+                    <button onClick={() => onRemove(type, index)} className="text-red-500 hover:text-red-700 flex-shrink-0"><Trash2 size={20}/></button>
+                </div>
+            ))}
+            <button onClick={() => onAdd(type)} className="w-full mt-2 p-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">+ Tambah</button>
+        </div>
+    );
+}
