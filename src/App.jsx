@@ -228,19 +228,15 @@ function MainApp({ user, onLogout }) {
     const profileDocPath = `artifacts/${appId}/public/data/profiles/${user.name}`;
     const formattedDate = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}`;
 
-    // --- PERBAIKAN: Memuat skrip secara berurutan ---
     useEffect(() => {
         loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js")
             .then(() => {
-                // Setelah jsPDF selesai, baru muat autoTable
                 return loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js");
             })
             .then(() => {
-                // Setelah semua skrip PDF selesai, muat skrip Excel
                 return loadScript("https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js");
             })
             .then(() => {
-                // Semua skrip berhasil dimuat
                 setScriptsLoaded(true);
             })
             .catch(error => console.error("Gagal memuat skrip eksternal:", error));
@@ -672,11 +668,11 @@ function PelacakPengeluaran({ transactions, budgetPlan, onTransactionAction }) {
         <AnimatedSection>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {editingTransaction && <EditTransactionModal transaction={editingTransaction} budgetPlan={budgetPlan} onClose={() => setEditingTransaction(null)} onSave={(data) => { onTransactionAction('update', data); setEditingTransaction(null);}} />}
-                <div className="lg:col-span-1 bg-white p-6 rounded-xl shadow-md">
+                <div className="lg:col-span-1 bg-white p-6 rounded-xl shadow-md transition-all duration-300 ease-in-out hover:shadow-2xl hover:-translate-y-1">
                     <h3 className="text-xl font-semibold mb-4">Tambah Pengeluaran</h3>
                     <TransactionForm budgetPlan={budgetPlan} onSubmit={(data) => onTransactionAction('add', data)} />
                 </div>
-                <div className="lg:col-span-2 bg-white p-6 rounded-xl shadow-md">
+                <div className="lg:col-span-2 bg-white p-6 rounded-xl shadow-md transition-all duration-300 ease-in-out hover:shadow-2xl hover:-translate-y-1">
                     <h3 className="text-xl font-semibold mb-4">Riwayat Pengeluaran</h3>
                     <div className="relative mb-4"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20}/><input type="text" placeholder="Cari deskripsi..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full p-2 pl-10 border rounded-lg"/></div>
                     <div className="overflow-x-auto max-h-[500px]">
@@ -752,7 +748,7 @@ function EditTransactionModal({ transaction, budgetPlan, onClose, onSave }) {
 
 function EditableList({ title, items, type, onChange, onAdd, onRemove, fields, hasType=false }) {
     return (
-        <div className="bg-white p-6 rounded-xl shadow-md space-y-3">
+        <div className="bg-white p-6 rounded-xl shadow-md space-y-3 transition-all duration-300 ease-in-out hover:shadow-2xl hover:-translate-y-1">
             <h3 className="text-xl font-semibold mb-2">{title}</h3>
             {items.map((item, index) => (
                 <div key={index} className="flex flex-col sm:flex-row gap-2 items-center">
