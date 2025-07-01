@@ -413,7 +413,8 @@ function MainApp({ user, onLogout }) {
 
     const tabs = [ { id: 'dasbor', label: 'Dasbor', icon: LayoutDashboard }, { id: 'pelacak', label: 'Pelacak Pengeluaran', icon: Coins }, { id: 'rencana', label: 'Rencana Anggaran', icon: Target }, ];
     const currentYear = new Date().getFullYear();
-    const years = Array.from({length: 5}, (_, i) => currentYear - i);
+    // --- PERUBAHAN: Membuat rentang tahun dari sekarang hingga 5 tahun ke depan ---
+    const years = Array.from({length: 6}, (_, i) => currentYear + i);
     const months = Array.from({length: 12}, (_, i) => new Date(0, i).toLocaleString('id-ID', { month: 'long' }));
 
     return (
