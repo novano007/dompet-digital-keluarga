@@ -421,7 +421,7 @@ function Dasbor({ allTransactions, currentMonthTransactions, budgetPlan, summary
             </AnimatedSection>
             <AnimatedSection>
                  <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-                    <div className="lg:col-span-3 bg-white p-4 sm:p-6 rounded-xl shadow-md">
+                    <div className="lg:col-span-3 bg-white p-4 sm:p-6 rounded-xl shadow-md transition-all duration-300 ease-in-out hover:shadow-2xl hover:-translate-y-1">
                         <h3 className="text-xl font-semibold mb-4">Ringkasan Anggaran per Kategori</h3>
                         <div className="overflow-x-auto">
                             <table className="w-full text-left">
@@ -441,7 +441,7 @@ function Dasbor({ allTransactions, currentMonthTransactions, budgetPlan, summary
                             </table>
                         </div>
                     </div>
-                    <div className="lg:col-span-2 bg-white p-4 sm:p-6 rounded-xl shadow-md">
+                    <div className="lg:col-span-2 bg-white p-4 sm:p-6 rounded-xl shadow-md transition-all duration-300 ease-in-out hover:shadow-2xl hover:-translate-y-1">
                         <h3 className="text-xl font-semibold mb-4">Realisasi Pengeluaran (%)</h3>
                         {pieChartData.length > 0 ? (
                             <ResponsiveContainer width="100%" height={250}>
@@ -456,7 +456,7 @@ function Dasbor({ allTransactions, currentMonthTransactions, budgetPlan, summary
             </AnimatedSection>
             <AnimatedSection>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div className="bg-white p-4 sm:p-6 rounded-xl shadow-md">
+                    <div className="bg-white p-4 sm:p-6 rounded-xl shadow-md transition-all duration-300 ease-in-out hover:shadow-2xl hover:-translate-y-1">
                          <h3 className="text-xl font-semibold mb-4">Tren Pengeluaran Harian</h3>
                          {dailyExpenseData.length > 0 ? (
                             <ResponsiveContainer width="100%" height={300}>
@@ -467,7 +467,7 @@ function Dasbor({ allTransactions, currentMonthTransactions, budgetPlan, summary
                             </ResponsiveContainer>
                          ) : <p className="text-center text-gray-500 h-full flex items-center justify-center">Belum ada data harian.</p>}
                     </div>
-                    <div className="bg-white p-4 sm:p-6 rounded-xl shadow-md">
+                    <div className="bg-white p-4 sm:p-6 rounded-xl shadow-md transition-all duration-300 ease-in-out hover:shadow-2xl hover:-translate-y-1">
                          <h3 className="text-xl font-semibold mb-4 flex items-center"><TrendingUp className="mr-2 h-6 w-6 text-blue-500"/>Tren Pengeluaran Bulanan</h3>
                          {monthlyTrendData.length > 0 ? (
                             <ResponsiveContainer width="100%" height={300}>
