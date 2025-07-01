@@ -413,7 +413,6 @@ function MainApp({ user, onLogout }) {
 
     const tabs = [ { id: 'dasbor', label: 'Dasbor', icon: LayoutDashboard }, { id: 'pelacak', label: 'Pelacak Pengeluaran', icon: Coins }, { id: 'rencana', label: 'Rencana Anggaran', icon: Target }, ];
     const currentYear = new Date().getFullYear();
-    // --- PERUBAHAN: Membuat rentang tahun dari sekarang hingga 5 tahun ke depan ---
     const years = Array.from({length: 6}, (_, i) => currentYear + i);
     const months = Array.from({length: 12}, (_, i) => new Date(0, i).toLocaleString('id-ID', { month: 'long' }));
 
@@ -660,10 +659,17 @@ function RencanaAnggaran({ budgetPlan, onUpdate, onCopyPrevious }) {
 function PelacakPengeluaran({ transactions, budgetPlan, onTransactionAction }) {
     const [editingTransaction, setEditingTransaction] = useState(null);
     const [searchTerm, setSearchTerm] = useState("");
+    const [filterCategory, setFilterCategory] = useState("Semua");
 
     const filteredTransactions = useMemo(() => {
-        return transactions.filter(t => t.description.toLowerCase().includes(searchTerm.toLowerCase()));
-    }, [transactions, searchTerm]);
+        return transactions
+            .filter(t => {
+                const searchMatch = t.description.toLowerCase().includes(searchTerm.toLowerCase());
+                const categoryMatch = filterCategory === 'Semua' || t.category === filterCategory;
+                return searchMatch && categoryMatch;
+            })
+            .sort((a, b) => new Date(b.date) - new Date(a.date));
+    }, [transactions, searchTerm, filterCategory]);
     
     return (
         <AnimatedSection>
@@ -675,7 +681,16 @@ function PelacakPengeluaran({ transactions, budgetPlan, onTransactionAction }) {
                 </div>
                 <div className="lg:col-span-2 bg-white p-6 rounded-xl shadow-md transition-all duration-300 ease-in-out hover:shadow-2xl hover:-translate-y-1">
                     <h3 className="text-xl font-semibold mb-4">Riwayat Pengeluaran</h3>
-                    <div className="relative mb-4"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20}/><input type="text" placeholder="Cari deskripsi..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full p-2 pl-10 border rounded-lg"/></div>
+                    <div className="flex flex-col sm:flex-row gap-4 mb-4">
+                        <div className="relative flex-grow w-full">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20}/>
+                            <input type="text" placeholder="Cari deskripsi..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full p-2 pl-10 border rounded-lg"/>
+                        </div>
+                        <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className="w-full sm:w-auto p-2 border rounded-lg bg-white">
+                            <option value="Semua">Semua Kategori</option>
+                            {budgetPlan.budgetCategories?.map(cat => <option key={cat.name} value={cat.name}>{cat.name}</option>)}
+                        </select>
+                    </div>
                     <div className="overflow-x-auto max-h-[500px]">
                         <table className="w-full text-left">
                             <thead className="sticky top-0 bg-white z-10"><tr className="border-b"><th className="p-2 text-sm">Tanggal</th><th className="p-2 text-sm">Deskripsi</th><th className="p-2 text-sm">Kategori</th><th className="p-2 text-sm text-right">Nominal</th><th className="p-2 text-sm text-center">Aksi</th></tr></thead>
