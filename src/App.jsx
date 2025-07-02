@@ -26,6 +26,7 @@ try {
 
 const appId = 'default-app-id';
 
+// --- FUNGSI YANG DIKEMBALIKAN: Untuk memuat script eksternal ---
 const loadScript = (src) => {
     return new Promise((resolve, reject) => {
         if (document.querySelector(`script[src="${src}"]`)) {
@@ -40,6 +41,8 @@ const loadScript = (src) => {
     });
 };
 
+
+// --- Komponen Baru: Animasi saat scroll ---
 function AnimatedSection({ children }) {
     const ref = useRef(null);
     const [isVisible, setIsVisible] = useState(false);
@@ -78,6 +81,7 @@ function AnimatedSection({ children }) {
     );
 }
 
+// --- Komponen Baru: Tombol Kembali ke Atas ---
 function ScrollToTopButton() {
     const [isVisible, setIsVisible] = useState(false);
 
@@ -262,7 +266,6 @@ function MainApp({ user, onLogout }) {
         };
     }, [user.name]);
 
-    // --- PERBAIKAN LOGIKA PERHITUNGAN SALDO ---
     useEffect(() => {
         if (loading) return;
 
@@ -345,7 +348,71 @@ function MainApp({ user, onLogout }) {
         return { totalIncome, totalSpent, sisaSaldo };
     }, [budgetPlan, monthlyTransactions, previousMonthBalance]);
 
-    const exportData = (type) => { /* ... (fungsi exportData tidak berubah) ... */ };
+    const exportData = (type) => {
+        if (!scriptsLoaded) {
+            alert("Pustaka ekspor sedang dimuat, silakan coba lagi sesaat lagi.");
+            return;
+        }
+        
+        const dataToExport = monthlyTransactions;
+        const { totalIncome, totalSpent, sisaSaldo } = monthlySummary;
+        
+        const formatCurrency = (value) => `Rp ${Number(value).toLocaleString('id-ID')}`;
+
+        if (type === 'pdf') {
+            if (!window.jspdf || !window.jspdf.jsPDF) {
+                alert("Pustaka PDF (jsPDF) tidak dapat dimuat.");
+                return;
+            }
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            if (typeof doc.autoTable !== 'function') {
+                alert("Pustaka tabel PDF (autoTable) tidak termuat. Silakan muat ulang halaman.");
+                return;
+            }
+            doc.setFontSize(18);
+            doc.text(`Laporan Keuangan - ${formattedDate}`, 14, 20);
+            
+            doc.setFontSize(12);
+            doc.text(`Total Pemasukan: ${formatCurrency(totalIncome)}`, 14, 30);
+            doc.text(`Total Pengeluaran: ${formatCurrency(totalSpent)}`, 14, 37);
+            doc.setFontSize(14);
+            doc.setFont(undefined, 'bold');
+            doc.text(`Sisa Saldo: ${formatCurrency(sisaSaldo)}`, 14, 46);
+            
+            doc.autoTable({
+                startY: 55,
+                head: [['Tanggal', 'Deskripsi', 'Kategori', 'Nominal']],
+                body: dataToExport.map(t => [t.date, t.description, t.category, formatCurrency(t.amount)]),
+                theme: 'striped',
+                headStyles: { fillColor: [41, 128, 185] },
+            });
+            doc.save(`laporan_${user.name}_${formattedDate}.pdf`);
+        } else if (type === 'excel') {
+             const summaryData = [
+                ["Laporan Keuangan", formattedDate],
+                [],
+                ["Total Pemasukan", totalIncome],
+                ["Total Pengeluaran", totalSpent],
+                ["Sisa Saldo", sisaSaldo],
+                [],
+             ];
+
+            const transactionHeader = ["Tanggal", "Deskripsi", "Kategori", "Nominal"];
+            const transactionBody = dataToExport.map(t => [t.date, t.description, t.category, t.amount]);
+
+            const finalData = [...summaryData, transactionHeader, ...transactionBody];
+            
+            const worksheet = window.XLSX.utils.aoa_to_sheet(finalData);
+
+            worksheet['!cols'] = [ {wch:12}, {wch:30}, {wch:20}, {wch:15} ];
+            
+            const workbook = window.XLSX.utils.book_new();
+            window.XLSX.utils.book_append_sheet(workbook, worksheet, `Laporan ${formattedDate}`);
+            window.XLSX.writeFile(workbook, `laporan_${user.name}_${formattedDate}.xlsx`);
+        }
+    };
+
 
     const tabs = [ { id: 'dasbor', label: 'Dasbor', icon: LayoutDashboard }, { id: 'pelacak', label: 'Pelacak Pengeluaran', icon: Coins }, { id: 'rencana', label: 'Rencana Anggaran', icon: Target }, ];
     const currentYear = new Date().getFullYear();
