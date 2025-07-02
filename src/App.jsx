@@ -354,7 +354,9 @@ function MainApp({ user, onLogout }) {
             return;
         }
         
-        const dataToExport = monthlyTransactions;
+        // --- PERBAIKAN: Urutkan data sebelum diekspor ---
+        const dataToExport = [...monthlyTransactions].sort((a, b) => new Date(b.date) - new Date(a.date));
+        
         const { totalIncome, totalSpent, sisaSaldo } = monthlySummary;
         
         const formatCurrency = (value) => `Rp ${Number(value).toLocaleString('id-ID')}`;
