@@ -251,7 +251,7 @@ function MainApp({ user, onLogout }) {
         const unsubscribeBudgets = onSnapshot(budgetQuery, (snapshot) => {
             const budgets = {};
             snapshot.forEach(doc => {
-                budgets[doc.id] = doc.data(); // doc.id is "YYYY-MM"
+                budgets[doc.id] = doc.data();
             });
             setAllBudgets(budgets);
             setLoading(false);
@@ -354,7 +354,6 @@ function MainApp({ user, onLogout }) {
             return;
         }
         
-        // --- PERBAIKAN: Urutkan data sebelum diekspor ---
         const dataToExport = [...monthlyTransactions].sort((a, b) => new Date(b.date) - new Date(a.date));
         
         const { totalIncome, totalSpent, sisaSaldo } = monthlySummary;
@@ -459,7 +458,7 @@ function MainApp({ user, onLogout }) {
                 {loading ? <div className="text-center py-10">Memuat data untuk {months[selectedDate.getMonth()]} {selectedDate.getFullYear()}...</div> : (
                     <>
                         {activeTab === 'dasbor' && <Dasbor allTransactions={allTransactions} currentMonthTransactions={monthlyTransactions} budgetPlan={budgetPlan} summary={monthlySummary} previousMonthBalance={previousMonthBalance} />}
-                        {activeTab === 'pelacak' && <PelacakPengeluaran transactions={monthlyTransactions} budgetPlan={budgetPlan} onTransactionAction={handleTransactionAction} />}
+                        {activeTab === 'pelacak' && <PelacakPengeluaran transactions={monthlyTransactions} allTransactions={allTransactions} budgetPlan={budgetPlan} onTransactionAction={handleTransactionAction} />}
                         {activeTab === 'rencana' && <RencanaAnggaran budgetPlan={budgetPlan} onUpdate={handleUpdateBudgetPlan} onCopyPrevious={handleCopyPreviousBudget} />}
                     </>
                 )}
@@ -661,7 +660,7 @@ function RencanaAnggaran({ budgetPlan, onUpdate, onCopyPrevious }) {
     );
 }
 
-function PelacakPengeluaran({ transactions, budgetPlan, onTransactionAction }) {
+function PelacakPengeluaran({ transactions, allTransactions, budgetPlan, onTransactionAction }) {
     const [editingTransaction, setEditingTransaction] = useState(null);
     const [searchTerm, setSearchTerm] = useState("");
     const [filterCategory, setFilterCategory] = useState("Semua");
@@ -682,7 +681,7 @@ function PelacakPengeluaran({ transactions, budgetPlan, onTransactionAction }) {
                 {editingTransaction && <EditTransactionModal transaction={editingTransaction} budgetPlan={budgetPlan} onClose={() => setEditingTransaction(null)} onSave={(data) => { onTransactionAction('update', data); setEditingTransaction(null);}} />}
                 <div className="lg:col-span-1 bg-white p-6 rounded-xl shadow-md transition-all duration-300 ease-in-out hover:shadow-2xl hover:-translate-y-1">
                     <h3 className="text-xl font-semibold mb-4">Tambah Pengeluaran</h3>
-                    <TransactionForm budgetPlan={budgetPlan} onSubmit={(data) => onTransactionAction('add', data)} />
+                    <TransactionForm budgetPlan={budgetPlan} onSubmit={(data) => onTransactionAction('add', data)} allTransactions={allTransactions} />
                 </div>
                 <div className="lg:col-span-2 bg-white p-6 rounded-xl shadow-md transition-all duration-300 ease-in-out hover:shadow-2xl hover:-translate-y-1">
                     <h3 className="text-xl font-semibold mb-4">Riwayat Pengeluaran</h3>
@@ -720,27 +719,88 @@ function PelacakPengeluaran({ transactions, budgetPlan, onTransactionAction }) {
     );
 }
 
-function TransactionForm({ budgetPlan, onSubmit, initialData = {} }) {
+function TransactionForm({ budgetPlan, onSubmit, initialData = {}, allTransactions }) {
     const [date, setDate] = useState(initialData.date || new Date().toISOString().slice(0, 10));
     const [description, setDescription] = useState(initialData.description || '');
     const [category, setCategory] = useState(initialData.category || '');
     const [amount, setAmount] = useState(initialData.amount || '');
+    const [suggestions, setSuggestions] = useState([]);
+    const [showSuggestions, setShowSuggestions] = useState(false);
 
     useEffect(() => {
-        if (!category && budgetPlan.budgetCategories?.length > 0) setCategory(budgetPlan.budgetCategories[0].name);
+        if (!category && budgetPlan.budgetCategories?.length > 0) {
+            setCategory(budgetPlan.budgetCategories[0].name);
+        }
     }, [budgetPlan, category]);
+
+    const handleDescriptionChange = (e) => {
+        const value = e.target.value;
+        setDescription(value);
+
+        if (value.length > 1) {
+            const uniqueDescriptions = [...new Set(allTransactions.map(t => t.description))];
+            const filteredSuggestions = uniqueDescriptions
+                .filter(d => d.toLowerCase().includes(value.toLowerCase()))
+                .slice(0, 5);
+            setSuggestions(filteredSuggestions);
+            setShowSuggestions(filteredSuggestions.length > 0);
+        } else {
+            setShowSuggestions(false);
+        }
+    };
+
+    const handleSuggestionClick = (suggestion) => {
+        const lastTransaction = allTransactions
+            .filter(t => t.description === suggestion)
+            .sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+
+        setDescription(suggestion);
+        if (lastTransaction) {
+            setAmount(lastTransaction.amount);
+            setCategory(lastTransaction.category);
+        }
+        setShowSuggestions(false);
+    };
     
     const handleSubmit = (e) => {
         e.preventDefault();
         if (!date || !description || !category || !amount) return;
         onSubmit({ ...initialData, date, description, category, amount: parseFloat(amount) });
-        if (!initialData.id) { setDescription(''); setAmount(''); }
+        if (!initialData.id) {
+            setDescription('');
+            setAmount('');
+        }
     };
 
     return (
         <form onSubmit={handleSubmit} className="space-y-4">
             <input type="date" value={date} onChange={e => setDate(e.target.value)} className="w-full p-2 border rounded-lg" required />
-            <input type="text" placeholder="Deskripsi" value={description} onChange={e => setDescription(e.target.value)} className="w-full p-2 border rounded-lg" required />
+            <div className="relative">
+                <input 
+                    type="text" 
+                    placeholder="Deskripsi" 
+                    value={description} 
+                    onChange={handleDescriptionChange} 
+                    onFocus={handleDescriptionChange}
+                    onBlur={() => setTimeout(() => setShowSuggestions(false), 150)} // Delay to allow click
+                    className="w-full p-2 border rounded-lg" 
+                    required 
+                    autoComplete="off"
+                />
+                {showSuggestions && (
+                    <div className="absolute z-20 w-full bg-white border border-gray-300 rounded-md mt-1 shadow-lg max-h-40 overflow-y-auto">
+                        {suggestions.map((s, i) => (
+                            <div 
+                                key={i} 
+                                onMouseDown={() => handleSuggestionClick(s)} // Use onMouseDown to fire before onBlur
+                                className="p-2 hover:bg-gray-100 cursor-pointer"
+                            >
+                                {s}
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
             <select value={category} onChange={e => setCategory(e.target.value)} className="w-full p-2 border rounded-lg" required>
                 <option value="" disabled>Pilih Kategori</option>
                 {budgetPlan.budgetCategories?.map(cat => <option key={cat.name} value={cat.name}>{cat.name}</option>)}
@@ -761,7 +821,7 @@ function EditTransactionModal({ transaction, budgetPlan, onClose, onSave }) {
                     <h3 className="text-xl font-semibold">Edit Pengeluaran</h3>
                     <button onClick={onClose} className="text-gray-500 hover:text-gray-800"><XIcon size={24}/></button>
                 </div>
-                <TransactionForm budgetPlan={budgetPlan} initialData={transaction} onSubmit={onSave} />
+                <TransactionForm budgetPlan={budgetPlan} initialData={transaction} onSubmit={onSave} allTransactions={[]} />
             </div>
         </div>
     );
